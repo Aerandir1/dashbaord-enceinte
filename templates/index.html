@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Enceinte Connectée</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+</head>
+<body data-theme="dark">
+  <main class="dashboard">
+    <header class="panel">
+      <div>
+        <h1>Dashboard</h1>
+        <p id="deviceLine">{{ state.device_name }} · {{ state.room }}</p>
+      </div>
+      <div class="header-actions">
+        <button id="themeToggle" class="btn ghost" aria-label="Activer le thème clair">🌙 Nuit</button>
+        <button id="powerBtn" class="btn {{ 'on' if state.power else 'off' }}">
+          {{ 'Éteindre' if state.power else 'Allumer' }}
+        </button>
+      </div>
+    </header>
+
+    <section class="grid">
+      <article class="panel service-panel">
+        <h2>Services audio</h2>
+        <div class="service-list">
+          <button class="service-chip" id="chip-spotify" data-service="spotify" aria-label="Sélectionner Spotify comme source">
+            <div class="service-meta">
+              <img
+                class="service-logo spotify"
+                src="{{ url_for('static', filename='img/Spotify_logo_without_text.svg') }}"
+                alt="Logo Spotify"
+              >
+              <span class="service-name">Spotify</span>
+            </div>
+            <div class="service-actions">
+              <span class="service-status" id="status-spotify">
+                {{ 'En ligne' if state.services['spotify']['online'] else 'Hors ligne' }}
+              </span>
+              <span class="service-active-dot" id="dot-spotify"></span>
+            </div>
+          </button>
+          <button class="service-chip" id="chip-airplay" data-service="airplay" aria-label="Sélectionner AirPlay comme source">
+            <div class="service-meta">
+              <img
+                class="service-logo airplay"
+                src="{{ url_for('static', filename='img/AirPlay_Audio_logo.svg') }}"
+                alt="Logo AirPlay"
+              >
+              <span class="service-name">AirPlay</span>
+            </div>
+            <div class="service-actions">
+              <span class="service-status" id="status-airplay">
+                {{ 'En ligne' if state.services['airplay']['online'] else 'Hors ligne' }}
+              </span>
+              <span class="service-active-dot" id="dot-airplay"></span>
+            </div>
+          </button>
+        </div>
+
+        <div class="controls source-actions">
+          <button class="btn ghost" id="toggleSpotify">On/Off Spotify</button>
+          <button class="btn ghost" id="toggleAirplay">On/Off AirPlay</button>
+        </div>
+        <p>Source active : <strong id="activeService">{{ state.active_service_name }}</strong></p>
+      </article>
+
+      <article class="panel">
+        <h2>Lecture</h2>
+        <p class="field-label">Source: <strong id="playbackSource">{{ state.active_service_name }}</strong></p>
+        <p class="track" id="trackName">{{ state.current_track }}</p>
+        <p class="artist" id="artistName">{{ state.current_artist }}</p>
+        <div class="controls">
+          <button class="btn" data-playback="previous">⏮</button>
+          <button class="btn primary icon-btn" id="playBtn" data-playback="toggle" aria-label="Lecture/Pause">
+            {{ '⏸' if state.is_playing else '▶' }}
+          </button>
+          <button class="btn" data-playback="next">⏭</button>
+        </div>
+      </article>
+
+      <article class="panel">
+        <h2>Volume</h2>
+        <div class="volume-row">
+          <button class="btn" id="volDown">-</button>
+          <input id="volumeSlider" type="range" min="0" max="100" value="{{ state.volume }}">
+          <button class="btn" id="volUp">+</button>
+        </div>
+        <p>Volume: <strong id="volumeValue">{{ state.volume }}</strong>%</p>
+        <button class="btn" id="muteBtn">{{ 'Activer le son' if state.muted else 'Muet' }}</button>
+      </article>
+
+      <article class="panel eq-panel">
+        <h2>Égaliseur (EQ)</h2>
+        <label class="field-label" for="eqPreset">Preset</label>
+        <select id="eqPreset" class="select">
+          <option value="flat" {{ 'selected' if state.eq_preset == 'flat' else '' }}>Flat</option>
+          <option value="bass_boost" {{ 'selected' if state.eq_preset == 'bass_boost' else '' }}>Bass Boost</option>
+          <option value="vocal" {{ 'selected' if state.eq_preset == 'vocal' else '' }}>Vocal</option>
+          <option value="treble_boost" {{ 'selected' if state.eq_preset == 'treble_boost' else '' }}>Treble Boost</option>
+          <option value="custom" {{ 'selected' if state.eq_preset == 'custom' else '' }}>Custom</option>
+        </select>
+
+        <div class="eq-grid eq-vertical">
+          <div class="eq-band vertical">
+            <label for="eq60">60Hz</label>
+            <input id="eq60" class="eq-slider vertical" type="range" min="-12" max="12" value="{{ state.eq_bands['60Hz'] }}" data-band="60Hz">
+            <span id="eq60Value">{{ state.eq_bands['60Hz'] }} dB</span>
+          </div>
+          <div class="eq-band vertical">
+            <label for="eq230">230Hz</label>
+            <input id="eq230" class="eq-slider vertical" type="range" min="-12" max="12" value="{{ state.eq_bands['230Hz'] }}" data-band="230Hz">
+            <span id="eq230Value">{{ state.eq_bands['230Hz'] }} dB</span>
+          </div>
+          <div class="eq-band vertical">
+            <label for="eq910">910Hz</label>
+            <input id="eq910" class="eq-slider vertical" type="range" min="-12" max="12" value="{{ state.eq_bands['910Hz'] }}" data-band="910Hz">
+            <span id="eq910Value">{{ state.eq_bands['910Hz'] }} dB</span>
+          </div>
+          <div class="eq-band vertical">
+            <label for="eq3600">3.6kHz</label>
+            <input id="eq3600" class="eq-slider vertical" type="range" min="-12" max="12" value="{{ state.eq_bands['3.6kHz'] }}" data-band="3.6kHz">
+            <span id="eq3600Value">{{ state.eq_bands['3.6kHz'] }} dB</span>
+          </div>
+          <div class="eq-band vertical">
+            <label for="eq14000">14kHz</label>
+            <input id="eq14000" class="eq-slider vertical" type="range" min="-12" max="12" value="{{ state.eq_bands['14kHz'] }}" data-band="14kHz">
+            <span id="eq14000Value">{{ state.eq_bands['14kHz'] }} dB</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <h2>État</h2>
+        <ul class="stats">
+          <li><span>Batterie</span> <strong id="battery">{{ state.battery }}%</strong></li>
+          <li>
+            <span>Wi‑Fi</span>
+            <strong id="wifi" class="wifi-indicator" aria-label="Signal Wi-Fi {{ state.wifi_strength }} sur 5">
+              {% for i in range(1, 6) %}
+                <span class="wifi-bar {{ 'active' if i <= state.wifi_strength else '' }}"></span>
+              {% endfor %}
+            </strong>
+          </li>
+          <li><span>Firmware</span> <strong id="firmware">{{ state.firmware }}</strong></li>
+          <li><span>Dernière mise à jour</span> <strong id="updatedAt">{{ state.updated_since }}</strong></li>
+        </ul>
+      </article>
+
+      <article class="panel spectrum-panel">
+        <div class="spectrum-header">
+          <h2>Spectre audio <span class="spectrum-fft-label">FFT</span></h2>
+          <button class="btn ghost spectrum-toggle" id="spectrumToggle" aria-label="Démarrer l'analyse">&#9654; Start</button>
+        </div>
+        <canvas id="spectrumCanvas" aria-label="Visualisation du spectre de fréquences"></canvas>
+        <div class="spectrum-axis">
+          <span>20 Hz</span><span>100 Hz</span><span>1 kHz</span><span>5 kHz</span><span>20 kHz</span>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
