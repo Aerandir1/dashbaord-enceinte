@@ -49,6 +49,8 @@ After=network.target
 User=pi
 WorkingDirectory=/chemin/vers/Dashboard enceinte
 EnvironmentFile=/chemin/vers/Dashboard enceinte/.env
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 ExecStart=/chemin/vers/Dashboard enceinte/.venv/bin/python /chemin/vers/Dashboard enceinte/run.py
 Restart=always
 
@@ -95,3 +97,48 @@ pi ALL=(root) NOPASSWD: /usr/bin/systemctl start shairport-sync, /usr/bin/system
 ```
 
 Ensuite, le bouton `Activer/Couper AirPlay` démarre ou arrête `shairport-sync`, et l'état affiché dans l'interface reflète l'état réel du service.
+
+## 9) Intégration Spotify avec librespot (service user sans mot de passe)
+Créer un service user `librespot` pour éviter `sudo` et mot de passe.
+
+Créer `~/.config/systemd/user/librespot.service` :
+
+```ini
+[Unit]
+Description=Librespot (Spotify Connect)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/librespot --name "Raspberry Spotify"
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+```
+
+Si `librespot` est compilé localement (par exemple dans `~/librespot/target/release/librespot`), utilisez ce chemin absolu dans `ExecStart`.
+
+Si les logs montrent `Invalid --backend "alsa"`, retirez l'option `--backend alsa`: votre build ne supporte pas ALSA et utilise généralement `rodio` par défaut.
+
+Activer le service user :
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now librespot
+systemctl --user status librespot
+```
+
+Autoriser le service user à rester actif après reboot (même sans session ouverte) :
+```bash
+sudo loginctl enable-linger pi
+```
+
+Variables dashboard (dans `.env`) :
+```bash
+LIBRESPOT_SERVICE=librespot
+LIBRESPOT_SYSTEMD_USER=true
+LIBRESPOT_USE_SUDO=false
+```
+
+Le bouton `Activer/Couper Spotify` du dashboard démarre ou arrête alors le service user `librespot` sans demander de mot de passe.

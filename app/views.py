@@ -3,6 +3,7 @@ import os
 import queue
 import subprocess
 import threading
+import time
 from datetime import datetime, timezone
 
 from flask import Response, jsonify, render_template, request, stream_with_context
@@ -18,7 +19,14 @@ except Exception:  # pragma: no cover
     sd = None
 
 from app import app
-from app.config import SHAIRPORT_SYNC_SERVICE, SHAIRPORT_SYNC_SYSTEMD_USER, SHAIRPORT_SYNC_USE_SUDO
+from app.config import (
+    LIBRESPOT_SERVICE,
+    LIBRESPOT_SYSTEMD_USER,
+    LIBRESPOT_USE_SUDO,
+    SHAIRPORT_SYNC_SERVICE,
+    SHAIRPORT_SYNC_SYSTEMD_USER,
+    SHAIRPORT_SYNC_USE_SUDO,
+)
 
 
 PLAYLIST = [
@@ -189,19 +197,40 @@ class ServerSpectrum:
 
 SPECTRUM = ServerSpectrum()
 
+SERVICE_BACKENDS = {
+    "airplay": {
+        "unit": SHAIRPORT_SYNC_SERVICE,
+        "systemd_user": SHAIRPORT_SYNC_SYSTEMD_USER,
+        "use_sudo": SHAIRPORT_SYNC_USE_SUDO,
+        "label": "shairport-sync",
+    },
+    "spotify": {
+        "unit": LIBRESPOT_SERVICE,
+        "systemd_user": LIBRESPOT_SYSTEMD_USER,
+        "use_sudo": LIBRESPOT_USE_SUDO,
+        "label": "librespot",
+    },
+}
+
 
 def _clamp(value, low, high):
     return max(low, min(high, value))
 
 
-def _run_systemctl(*args):
+def _run_systemctl(*args, systemd_user=False, use_sudo=False):
     command = []
-    if SHAIRPORT_SYNC_USE_SUDO:
+    if use_sudo:
         command.extend(["sudo", "-n"])
     command.append("systemctl")
-    if SHAIRPORT_SYNC_SYSTEMD_USER:
+    if systemd_user:
         command.append("--user")
     command.extend(args)
+
+    env = os.environ.copy()
+    if systemd_user:
+        uid = os.getuid()
+        env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{uid}")
+        env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{uid}/bus")
 
     try:
         completed = subprocess.run(
@@ -209,7 +238,7 @@ def _run_systemctl(*args):
             check=False,
             capture_output=True,
             text=True,
-            env=os.environ.copy(),
+            env=env,
         )
     except FileNotFoundError:
         return False, "", "La commande systemctl est introuvable."
@@ -217,8 +246,21 @@ def _run_systemctl(*args):
     return completed.returncode == 0, (completed.stdout or "").strip(), (completed.stderr or "").strip()
 
 
-def _get_airplay_service_status():
-    ok, stdout, stderr = _run_systemctl("is-active", SHAIRPORT_SYNC_SERVICE)
+def _get_service_backend(service):
+    return SERVICE_BACKENDS.get(service)
+
+
+def _get_service_status(service):
+    backend = _get_service_backend(service)
+    if not backend:
+        return SPEAKER_STATE["services"][service]["online"], None
+
+    ok, stdout, stderr = _run_systemctl(
+        "is-active",
+        backend["unit"],
+        systemd_user=backend["systemd_user"],
+        use_sudo=backend["use_sudo"],
+    )
     status = stdout.lower()
     error = stderr or stdout
 
@@ -231,28 +273,43 @@ def _get_airplay_service_status():
     if "could not be found" in error.lower() or "not found" in error.lower():
         return False, None
 
-    return False, error or f"Impossible de lire l'état du service {SHAIRPORT_SYNC_SERVICE}."
+    return False, error or f"Impossible de lire l'état du service {backend['unit']}."
 
 
-def _set_airplay_service_online(online):
+def _set_service_online(service, online):
+    backend = _get_service_backend(service)
+    if not backend:
+        SPEAKER_STATE["services"][service]["online"] = online
+        return True, None
+
     action = "start" if online else "stop"
-    ok, _stdout, stderr = _run_systemctl(action, SHAIRPORT_SYNC_SERVICE)
+    ok, _stdout, stderr = _run_systemctl(
+        action,
+        backend["unit"],
+        systemd_user=backend["systemd_user"],
+        use_sudo=backend["use_sudo"],
+    )
     if not ok:
-        service_label = SHAIRPORT_SYNC_SERVICE
         reason = stderr or f"La commande systemctl {action} a échoué."
-        return False, f"Impossible de {'démarrer' if online else 'arrêter'} {service_label} : {reason}"
+        return False, f"Impossible de {'démarrer' if online else 'arrêter'} {backend['label']} : {reason}"
 
-    refreshed_online, error = _get_airplay_service_status()
-    if error:
-        return False, error
-    if refreshed_online != online:
-        return False, f"Le service {SHAIRPORT_SYNC_SERVICE} n'a pas atteint l'état attendu."
-    return True, None
+    # Un service peut passer brièvement à "active" avant de crasher.
+    for _ in range(6):
+        refreshed_online, error = _get_service_status(service)
+        if error:
+            return False, error
+        if refreshed_online == online:
+            return True, None
+        time.sleep(0.3)
+
+    return False, f"Le service {backend['unit']} n'a pas atteint l'état attendu."
 
 
 def _sync_service_states():
-    airplay_online, _error = _get_airplay_service_status()
-    SPEAKER_STATE["services"]["airplay"]["online"] = airplay_online
+    for service in SPEAKER_STATE["services"]:
+        if service in SERVICE_BACKENDS:
+            online, _error = _get_service_status(service)
+            SPEAKER_STATE["services"][service]["online"] = online
 
     active_service_key = SPEAKER_STATE.get("active_service")
     if active_service_key and not SPEAKER_STATE["services"][active_service_key]["online"]:
@@ -500,8 +557,8 @@ def api_services():
         desired_online = not SPEAKER_STATE["services"][service]["online"]
 
     if desired_online is not None:
-        if service == "airplay":
-            ok, error = _set_airplay_service_online(desired_online)
+        if service in SERVICE_BACKENDS:
+            ok, error = _set_service_online(service, desired_online)
             if not ok:
                 return jsonify({"error": error}), 400
             _sync_service_states()
