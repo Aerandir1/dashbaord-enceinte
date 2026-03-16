@@ -151,8 +151,15 @@
       <article class="panel spectrum-panel">
         <div class="spectrum-header">
           <h2>Spectre audio <span class="spectrum-fft-label">FFT</span></h2>
-          <button class="btn ghost spectrum-toggle" id="spectrumToggle" aria-label="Démarrer l'analyse">&#9654; Start</button>
+          <div class="spectrum-controls">
+            <select id="spectrumDevice" class="select" aria-label="Périphérique audio serveur"></select>
+            <button class="btn ghost" id="spectrumRefreshDevices" aria-label="Rafraîchir les périphériques">↻</button>
+            <button class="btn ghost spectrum-toggle" id="spectrumToggle" aria-label="Démarrer l'analyse serveur">▶ Start serveur</button>
+          </div>
         </div>
+        <p class="spectrum-hint" id="spectrumHint">
+          Spectre basé sur l'audio du serveur Linux.
+        </p>
         <canvas id="spectrumCanvas" aria-label="Visualisation du spectre de fréquences"></canvas>
         <div class="spectrum-axis">
           <span>20 Hz</span><span>100 Hz</span><span>1 kHz</span><span>5 kHz</span><span>20 kHz</span>

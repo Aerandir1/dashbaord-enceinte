@@ -20,6 +20,33 @@ async function fetchState() {
   return response.json();
 }
 
+let _stateEventSource = null;
+
+function startRealtimeSync() {
+  if (!window.EventSource) return;
+  if (_stateEventSource) _stateEventSource.close();
+
+  _stateEventSource = new EventSource('/api/stream');
+
+  _stateEventSource.addEventListener('state', (event) => {
+    try {
+      const state = JSON.parse(event.data);
+      render(state);
+    } catch (_) {
+      // ignore payload invalid
+    }
+  });
+
+  _stateEventSource.onerror = () => {
+    // tentative de reconnexion contrôlée
+    if (_stateEventSource) {
+      _stateEventSource.close();
+      _stateEventSource = null;
+    }
+    setTimeout(startRealtimeSync, 1500);
+  };
+}
+
 const _systemQuery = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)');
 
 function _isManualOverride() {
@@ -264,226 +291,185 @@ fetchState().then((state) => {
   if (state) render(state);
 });
 
-// ── Spectrum Analyzer (Web Audio API + FFT) ───────────────────────────
+startRealtimeSync();
+
+// ── Spectrum Analyzer — source audio serveur Linux ────────────────────
 (function () {
   const canvas = document.getElementById('spectrumCanvas');
   const toggleBtn = document.getElementById('spectrumToggle');
+  const refreshBtn = document.getElementById('spectrumRefreshDevices');
+  const deviceSelect = document.getElementById('spectrumDevice');
+  const hint = document.getElementById('spectrumHint');
   const ctx = canvas.getContext('2d');
 
-  // Bandes EQ : fréquence centrale → fréquence du filtre
-  const EQ_BANDS = [
-    { band: '60Hz',   freq: 60 },
-    { band: '230Hz',  freq: 230 },
-    { band: '910Hz',  freq: 910 },
-    { band: '3.6kHz', freq: 3600 },
-    { band: '14kHz',  freq: 14000 },
-  ];
-
-  let audioCtx = null;
-  let analyser = null;
-  let filters = [];
-  let sourceNode = null;
-  let rafId = null;
   let running = false;
+  let pollTimer = null;
 
-  // Lire les gains EQ actuels depuis les sliders
-  function readEqGains() {
-    return EQ_BANDS.map(({ band }) => {
-      const slider = document.querySelector(`.eq-slider[data-band="${band}"]`);
-      return slider ? Number(slider.value) : 0;
-    });
+  function setHint(text) {
+    hint.textContent = text;
   }
 
-  // Mettre à jour les filtres audio quand l'EQ change
-  function updateFilters() {
-    if (!filters.length) return;
-    const gains = readEqGains();
-    filters.forEach((f, i) => { f.gain.value = gains[i]; });
-  }
+  async function loadDevices() {
+    const response = await fetch('/api/audio/devices');
+    const data = await response.json();
 
-  // Initialiser le graphe audio : bruit blanc → filtres EQ → analyser → silencieux
-  function initAudio() {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    deviceSelect.innerHTML = '';
+    const autoOpt = document.createElement('option');
+    autoOpt.value = '';
+    autoOpt.textContent = 'Défaut serveur';
+    deviceSelect.appendChild(autoOpt);
 
-    // Générateur de bruit blanc (buffer de 2s en boucle)
-    const bufferSize = audioCtx.sampleRate * 2;
-    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-
-    sourceNode = audioCtx.createBufferSource();
-    sourceNode.buffer = buffer;
-    sourceNode.loop = true;
-
-    // Créer un filtre peaking par bande EQ
-    filters = EQ_BANDS.map(({ freq }, i) => {
-      const f = audioCtx.createBiquadFilter();
-      f.type = 'peaking';
-      f.frequency.value = freq;
-      f.Q.value = 1.4;
-      f.gain.value = readEqGains()[i];
-      return f;
+    (data.devices || []).forEach((dev) => {
+      const opt = document.createElement('option');
+      opt.value = String(dev.id);
+      opt.textContent = `${dev.id} · ${dev.name}`;
+      deviceSelect.appendChild(opt);
     });
 
-    // Chaîner les filtres
-    let prev = sourceNode;
-    filters.forEach(f => { prev.connect(f); prev = f; });
+    if (!data.available) {
+      setHint('Backend audio serveur indisponible. Installer numpy + sounddevice.');
+      toggleBtn.disabled = true;
+      deviceSelect.disabled = true;
+      refreshBtn.disabled = true;
+      return;
+    }
 
-    // Analyser (FFT size 2048 → 1024 bins)
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.82;
-    prev.connect(analyser);
-
-    // Sortie silencieuse (gain 0)
-    const silence = audioCtx.createGain();
-    silence.gain.value = 0;
-    analyser.connect(silence);
-    silence.connect(audioCtx.destination);
-
-    sourceNode.start();
+    toggleBtn.disabled = false;
+    deviceSelect.disabled = false;
+    refreshBtn.disabled = false;
+    setHint('Spectre basé sur l\'audio du serveur Linux.');
   }
 
-  // ── Rendu canvas ──────────────────────────────────────────────────────
-  function getThemeColors() {
-    const style = getComputedStyle(document.body);
-    return {
-      primary:  style.getPropertyValue('--primary').trim()  || '#2563eb',
-      muted:    style.getPropertyValue('--muted').trim()    || '#9db0ca',
-      panelBg:  style.getPropertyValue('--panel').trim()    || 'rgba(17,24,39,0.82)',
-      text:     style.getPropertyValue('--text').trim()     || '#e7edf7',
-    };
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.round(rect.width * devicePixelRatio);
+    canvas.height = Math.round(rect.height * devicePixelRatio);
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
   }
 
-  function draw() {
-    if (!running) return;
-    rafId = requestAnimationFrame(draw);
+  function drawBins(bins) {
+    const W = canvas.width / devicePixelRatio;
+    const H = canvas.height / devicePixelRatio;
 
-    const W = canvas.width;
-    const H = canvas.height;
-    const bufLen = analyser.frequencyBinCount;   // 1024
-    const freqData = new Uint8Array(bufLen);
-    analyser.getByteFrequencyData(freqData);
-
-    const colors = getThemeColors();
     ctx.clearRect(0, 0, W, H);
 
-    // Grille horizontale (dB)
     ctx.strokeStyle = 'rgba(148,163,184,0.12)';
     ctx.lineWidth = 1;
     for (let i = 0; i <= 4; i++) {
       const y = Math.round((H / 4) * i) + 0.5;
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
     }
 
-    // Convertir l'échelle linéaire de bins → axe logarithmique (20 Hz … 20 kHz)
-    const sampleRate = audioCtx.sampleRate;
-    const nyquist = sampleRate / 2;
-    const logMin = Math.log10(20);
-    const logMax = Math.log10(20000);
-
-    function freqToX(freq) {
-      return ((Math.log10(freq) - logMin) / (logMax - logMin)) * W;
-    }
-    function binToFreq(bin) {
-      return (bin / bufLen) * nyquist;
-    }
-
-    // Construire le chemin du spectre
+    const primary = getComputedStyle(document.body).getPropertyValue('--primary').trim() || '#2563eb';
     const gradient = ctx.createLinearGradient(0, 0, 0, H);
-    gradient.addColorStop(0,   colors.primary);
-    gradient.addColorStop(0.6, colors.primary + '99');
-    gradient.addColorStop(1,   colors.primary + '11');
+    gradient.addColorStop(0, primary);
+    gradient.addColorStop(0.65, `${primary}99`);
+    gradient.addColorStop(1, `${primary}11`);
 
     ctx.beginPath();
     ctx.moveTo(0, H);
-
-    let started = false;
-    for (let bin = 1; bin < bufLen; bin++) {
-      const freq = binToFreq(bin);
-      if (freq < 20 || freq > 20000) continue;
-      const x = freqToX(freq);
-      const amplitude = freqData[bin] / 255;
-      const y = H - amplitude * H * 0.92;
-      if (!started) { ctx.lineTo(x, y); started = true; }
-      else ctx.lineTo(x, y);
-    }
+    bins.forEach((v, i) => {
+      const x = (i / Math.max(1, bins.length - 1)) * W;
+      const y = H - Math.max(0, Math.min(1, v)) * H * 0.92;
+      ctx.lineTo(x, y);
+    });
     ctx.lineTo(W, H);
     ctx.closePath();
-
-    // Remplissage avec dégradé
     ctx.fillStyle = gradient;
     ctx.fill();
 
-    // Trait du dessus
     ctx.beginPath();
-    started = false;
-    for (let bin = 1; bin < bufLen; bin++) {
-      const freq = binToFreq(bin);
-      if (freq < 20 || freq > 20000) continue;
-      const x = freqToX(freq);
-      const amplitude = freqData[bin] / 255;
-      const y = H - amplitude * H * 0.92;
-      if (!started) { ctx.moveTo(x, y); started = true; }
+    bins.forEach((v, i) => {
+      const x = (i / Math.max(1, bins.length - 1)) * W;
+      const y = H - Math.max(0, Math.min(1, v)) * H * 0.92;
+      if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
-    }
-    ctx.strokeStyle = colors.primary;
+    });
+    ctx.strokeStyle = primary;
     ctx.lineWidth = 2;
     ctx.stroke();
-
-    // Marqueurs des bandes EQ
-    EQ_BANDS.forEach(({ freq }) => {
-      const x = Math.round(freqToX(freq)) + 0.5;
-      ctx.beginPath();
-      ctx.moveTo(x, 0); ctx.lineTo(x, H);
-      ctx.strokeStyle = 'rgba(148,163,184,0.20)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([3, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    });
   }
 
-  // Redimensionner le canvas au pixel près
-  function resizeCanvas() {
-    const rect = canvas.getBoundingClientRect();
-    canvas.width  = Math.round(rect.width  * devicePixelRatio);
-    canvas.height = Math.round(rect.height * devicePixelRatio);
-    ctx.scale(devicePixelRatio, devicePixelRatio);
-    canvas.style.width  = rect.width  + 'px';
-    canvas.style.height = rect.height + 'px';
+  async function pollSpectrum() {
+    if (!running) return;
+    try {
+      const response = await fetch('/api/spectrum');
+      const data = await response.json();
+      if (!data.running) {
+        stopVisual('Capture serveur arrêtée.');
+        return;
+      }
+      if (Array.isArray(data.bins)) {
+        drawBins(data.bins);
+      }
+      if (data.error) {
+        setHint(`Avertissement: ${data.error}`);
+      }
+    } catch (_) {
+      stopVisual('Connexion serveur perdue.');
+      return;
+    }
+
+    pollTimer = setTimeout(pollSpectrum, 180);
   }
 
-  // Démarrer / arrêter
-  function startSpectrum() {
-    if (!audioCtx) initAudio();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    resizeCanvas();
-    running = true;
-    toggleBtn.textContent = '⏹ Stop';
-    toggleBtn.classList.add('active');
-    draw();
-  }
-
-  function stopSpectrum() {
+  function stopVisual(message) {
     running = false;
-    cancelAnimationFrame(rafId);
-    toggleBtn.textContent = '▶ Start';
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+    toggleBtn.textContent = '▶ Start serveur';
     toggleBtn.classList.remove('active');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (message) setHint(message);
   }
 
-  toggleBtn.addEventListener('click', () => {
-    running ? stopSpectrum() : startSpectrum();
+  async function startServerSpectrum() {
+    const payload = { device: deviceSelect.value || null };
+    const response = await fetch('/api/audio/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setHint(data.error || 'Impossible de démarrer la capture serveur.');
+      return;
+    }
+
+    running = true;
+    toggleBtn.textContent = '⏹ Stop serveur';
+    toggleBtn.classList.add('active');
+    setHint('Capture serveur active.');
+    pollSpectrum();
+  }
+
+  async function stopServerSpectrum() {
+    try {
+      await fetch('/api/audio/stop', { method: 'POST' });
+    } catch (_) {
+      // ignore
+    }
+    stopVisual('Capture serveur arrêtée.');
+  }
+
+  toggleBtn.addEventListener('click', async () => {
+    if (running) {
+      await stopServerSpectrum();
+    } else {
+      await startServerSpectrum();
+    }
   });
 
-  // Resync filtres quand les sliders EQ bougent
-  document.querySelectorAll('.eq-slider').forEach(slider => {
-    slider.addEventListener('input', updateFilters);
-  });
+  refreshBtn.addEventListener('click', loadDevices);
+  window.addEventListener('resize', resizeCanvas);
 
-  // Redimensionner si la fenêtre change
-  window.addEventListener('resize', () => {
-    if (running) { resizeCanvas(); }
-  });
+  resizeCanvas();
+  loadDevices();
 })();

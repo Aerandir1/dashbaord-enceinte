@@ -1,8 +1,24 @@
+import json
+import os
+import queue
+import subprocess
+import threading
 from datetime import datetime, timezone
 
-from flask import jsonify, render_template, request
+from flask import Response, jsonify, render_template, request, stream_with_context
+
+try:
+    import numpy as np
+except Exception:  # pragma: no cover
+    np = None
+
+try:
+    import sounddevice as sd
+except Exception:  # pragma: no cover
+    sd = None
 
 from app import app
+from app.config import SHAIRPORT_SYNC_SERVICE, SHAIRPORT_SYNC_SYSTEMD_USER, SHAIRPORT_SYNC_USE_SUDO
 
 
 PLAYLIST = [
@@ -39,13 +55,232 @@ SPEAKER_STATE = {
     "updated_at": datetime.now(timezone.utc).isoformat(),
 }
 
+# Clients abonnés au flux temps réel (SSE)
+_SUBSCRIBERS = []
+
+
+class ServerSpectrum:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._stream = None
+        self._device = None
+        self._samplerate = 48000
+        self._fft_size = 2048
+        self._bins_count = 96
+        self._last_bins = [0.0] * self._bins_count
+        self._last_error = None
+        self._running = False
+
+    def available(self):
+        return np is not None and sd is not None
+
+    def list_devices(self):
+        if not self.available():
+            return []
+        devices = []
+        for idx, dev in enumerate(sd.query_devices()):
+            if dev.get("max_input_channels", 0) > 0:
+                devices.append(
+                    {
+                        "id": idx,
+                        "name": dev.get("name", f"device-{idx}"),
+                        "samplerate": int(dev.get("default_samplerate", 48000)),
+                    }
+                )
+        return devices
+
+    def _process_block(self, mono):
+        if len(mono) < 64:
+            return
+
+        window = np.hanning(len(mono))
+        spectrum = np.fft.rfft(mono * window)
+        magnitude = np.abs(spectrum)
+
+        # Conversion dB puis normalisation [0..1]
+        db = 20 * np.log10(magnitude + 1e-9)
+        db_min, db_max = -90.0, -10.0
+        norm = np.clip((db - db_min) / (db_max - db_min), 0.0, 1.0)
+
+        freqs = np.fft.rfftfreq(len(mono), d=1.0 / self._samplerate)
+        low, high = 20.0, min(20000.0, self._samplerate / 2)
+        edges = np.logspace(np.log10(low), np.log10(high), self._bins_count + 1)
+
+        bins = []
+        for i in range(self._bins_count):
+            mask = (freqs >= edges[i]) & (freqs < edges[i + 1])
+            if np.any(mask):
+                bins.append(float(np.max(norm[mask])))
+            else:
+                bins.append(0.0)
+
+        with self._lock:
+            self._last_bins = bins
+
+    def _callback(self, indata, frames, _time, status):
+        if status:
+            self._last_error = str(status)
+        try:
+            mono = np.mean(indata[:, :1], axis=1)
+            self._process_block(mono)
+        except Exception as exc:  # pragma: no cover
+            self._last_error = str(exc)
+
+    def start(self, device=None):
+        if not self.available():
+            return False, "Backend audio serveur indisponible (numpy/sounddevice manquant)."
+
+        self.stop()
+
+        try:
+            if device in ("", None):
+                device = None
+            elif isinstance(device, str) and device.isdigit():
+                device = int(device)
+
+            if device is not None:
+                info = sd.query_devices(device)
+                self._samplerate = int(info.get("default_samplerate", 48000))
+            else:
+                default_in = sd.default.device[0]
+                if default_in is not None and default_in >= 0:
+                    info = sd.query_devices(default_in)
+                    self._samplerate = int(info.get("default_samplerate", 48000))
+
+            self._stream = sd.InputStream(
+                device=device,
+                channels=1,
+                samplerate=self._samplerate,
+                blocksize=self._fft_size,
+                callback=self._callback,
+            )
+            self._stream.start()
+            self._device = device
+            self._running = True
+            self._last_error = None
+            return True, "ok"
+        except Exception as exc:
+            self._stream = None
+            self._running = False
+            self._last_error = str(exc)
+            return False, str(exc)
+
+    def stop(self):
+        try:
+            if self._stream is not None:
+                self._stream.stop()
+                self._stream.close()
+        except Exception:
+            pass
+        finally:
+            self._stream = None
+            self._running = False
+
+    def snapshot(self):
+        with self._lock:
+            bins = list(self._last_bins)
+        return {
+            "running": self._running,
+            "device": self._device,
+            "bins": bins,
+            "error": self._last_error,
+        }
+
+
+SPECTRUM = ServerSpectrum()
+
 
 def _clamp(value, low, high):
     return max(low, min(high, value))
 
 
+def _run_systemctl(*args):
+    command = []
+    if SHAIRPORT_SYNC_USE_SUDO:
+        command.extend(["sudo", "-n"])
+    command.append("systemctl")
+    if SHAIRPORT_SYNC_SYSTEMD_USER:
+        command.append("--user")
+    command.extend(args)
+
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+    except FileNotFoundError:
+        return False, "", "La commande systemctl est introuvable."
+
+    return completed.returncode == 0, (completed.stdout or "").strip(), (completed.stderr or "").strip()
+
+
+def _get_airplay_service_status():
+    ok, stdout, stderr = _run_systemctl("is-active", SHAIRPORT_SYNC_SERVICE)
+    status = stdout.lower()
+    error = stderr or stdout
+
+    if ok or status == "active":
+        return True, None
+
+    if status in {"inactive", "failed", "deactivating", "activating", "unknown"}:
+        return False, None
+
+    if "could not be found" in error.lower() or "not found" in error.lower():
+        return False, None
+
+    return False, error or f"Impossible de lire l'état du service {SHAIRPORT_SYNC_SERVICE}."
+
+
+def _set_airplay_service_online(online):
+    action = "start" if online else "stop"
+    ok, _stdout, stderr = _run_systemctl(action, SHAIRPORT_SYNC_SERVICE)
+    if not ok:
+        service_label = SHAIRPORT_SYNC_SERVICE
+        reason = stderr or f"La commande systemctl {action} a échoué."
+        return False, f"Impossible de {'démarrer' if online else 'arrêter'} {service_label} : {reason}"
+
+    refreshed_online, error = _get_airplay_service_status()
+    if error:
+        return False, error
+    if refreshed_online != online:
+        return False, f"Le service {SHAIRPORT_SYNC_SERVICE} n'a pas atteint l'état attendu."
+    return True, None
+
+
+def _sync_service_states():
+    airplay_online, _error = _get_airplay_service_status()
+    SPEAKER_STATE["services"]["airplay"]["online"] = airplay_online
+
+    active_service_key = SPEAKER_STATE.get("active_service")
+    if active_service_key and not SPEAKER_STATE["services"][active_service_key]["online"]:
+        fallback = next(
+            (key for key, value in SPEAKER_STATE["services"].items() if value["online"]),
+            None,
+        )
+        SPEAKER_STATE["active_service"] = fallback
+
+
 def _touch_state():
     SPEAKER_STATE["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _broadcast_state()
+
+
+def _broadcast_state():
+    payload = _public_state()
+    dead = []
+    for q in _SUBSCRIBERS:
+        try:
+            q.put_nowait(payload)
+        except queue.Full:
+            dead.append(q)
+
+    if dead:
+        for q in dead:
+            if q in _SUBSCRIBERS:
+                _SUBSCRIBERS.remove(q)
 
 
 def _updated_since(iso_value):
@@ -69,6 +304,7 @@ def _updated_since(iso_value):
 
 
 def _public_state():
+    _sync_service_states()
     track = PLAYLIST[SPEAKER_STATE["track_index"]]
     active_service_key = SPEAKER_STATE.get("active_service")
     active_service = SPEAKER_STATE["services"].get(active_service_key) if active_service_key else None
@@ -89,6 +325,67 @@ def index():
 @app.route("/api/state", methods=["GET"])
 def api_state():
     return jsonify(_public_state())
+
+
+@app.route("/api/audio/devices", methods=["GET"])
+def api_audio_devices():
+    return jsonify(
+        {
+            "available": SPECTRUM.available(),
+            "devices": SPECTRUM.list_devices(),
+        }
+    )
+
+
+@app.route("/api/audio/start", methods=["POST"])
+def api_audio_start():
+    payload = request.json or {}
+    ok, message = SPECTRUM.start(payload.get("device"))
+    if not ok:
+        return jsonify({"error": message}), 400
+    return jsonify(SPECTRUM.snapshot())
+
+
+@app.route("/api/audio/stop", methods=["POST"])
+def api_audio_stop():
+    SPECTRUM.stop()
+    return jsonify(SPECTRUM.snapshot())
+
+
+@app.route("/api/spectrum", methods=["GET"])
+def api_spectrum():
+    data = SPECTRUM.snapshot()
+    data["available"] = SPECTRUM.available()
+    return jsonify(data)
+
+
+@app.route("/api/stream", methods=["GET"])
+def api_stream():
+    def event_stream():
+        client_queue = queue.Queue(maxsize=10)
+        _SUBSCRIBERS.append(client_queue)
+
+        try:
+            # Snapshot immédiat à la connexion
+            yield f"event: state\ndata: {json.dumps(_public_state())}\n\n"
+
+            while True:
+                try:
+                    state = client_queue.get(timeout=25)
+                    yield f"event: state\ndata: {json.dumps(state)}\n\n"
+                except queue.Empty:
+                    # heartbeat pour garder la connexion active
+                    yield ": ping\n\n"
+        finally:
+            if client_queue in _SUBSCRIBERS:
+                _SUBSCRIBERS.remove(client_queue)
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return Response(stream_with_context(event_stream()), headers=headers, mimetype="text/event-stream")
 
 
 @app.route("/api/power", methods=["POST"])
@@ -194,28 +491,30 @@ def api_services():
     if service not in SPEAKER_STATE["services"]:
         return jsonify({"error": "Service inconnu"}), 400
 
-    if "online" in payload:
-        SPEAKER_STATE["services"][service]["online"] = bool(payload["online"])
-
     action = payload.get("action")
-    if action == "toggle":
-        current = SPEAKER_STATE["services"][service]["online"]
-        SPEAKER_STATE["services"][service]["online"] = not current
+    desired_online = None
+    if "online" in payload:
+        desired_online = bool(payload["online"])
+    elif action == "toggle":
+        _sync_service_states()
+        desired_online = not SPEAKER_STATE["services"][service]["online"]
+
+    if desired_online is not None:
+        if service == "airplay":
+            ok, error = _set_airplay_service_online(desired_online)
+            if not ok:
+                return jsonify({"error": error}), 400
+            _sync_service_states()
+        else:
+            SPEAKER_STATE["services"][service]["online"] = desired_online
 
     if payload.get("select") or action == "select":
+        _sync_service_states()
         if not SPEAKER_STATE["services"][service]["online"]:
             return jsonify({"error": "Service hors ligne"}), 400
         SPEAKER_STATE["active_service"] = service
 
-    if (
-        SPEAKER_STATE.get("active_service")
-        and not SPEAKER_STATE["services"][SPEAKER_STATE["active_service"]]["online"]
-    ):
-        fallback = next(
-            (key for key, value in SPEAKER_STATE["services"].items() if value["online"]),
-            None,
-        )
-        SPEAKER_STATE["active_service"] = fallback
+    _sync_service_states()
 
     _touch_state()
     return jsonify(_public_state())

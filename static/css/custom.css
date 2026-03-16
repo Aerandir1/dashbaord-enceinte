@@ -286,6 +286,8 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-bottom: 12px;
 }
 
@@ -308,6 +310,23 @@ h2 {
   vertical-align: middle;
 }
 
+.spectrum-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#spectrumDevice {
+  min-width: 240px;
+}
+
+.spectrum-hint {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
 #spectrumCanvas {
   display: block;
   width: 100%;
@@ -326,8 +345,8 @@ h2 {
 }
 
 .spectrum-toggle.active {
-  border-color: var(--success);
-  color: var(--success);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 /* Bouton thème synchronisé avec le système */

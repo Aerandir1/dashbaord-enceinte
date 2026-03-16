@@ -71,3 +71,27 @@ Le backend expose des routes API de contrôle:
 - `POST /api/volume`
 
 Vous pouvez brancher ces routes à la vraie logique de l’enceinte (Bluetooth, ALSA, PulseAudio, MQTT, etc.) dans `app/views.py`.
+
+## 8) Intégration AirPlay avec shairport-sync
+Le bouton `AirPlay` du dashboard peut piloter directement le service `shairport-sync` via `systemctl`.
+
+Installer et activer le service :
+```bash
+sudo apt install shairport-sync
+sudo systemctl enable shairport-sync
+sudo systemctl start shairport-sync
+```
+
+Variables optionnelles pour le dashboard :
+```bash
+export SHAIRPORT_SYNC_SERVICE=shairport-sync
+export SHAIRPORT_SYNC_SYSTEMD_USER=false
+export SHAIRPORT_SYNC_USE_SUDO=true
+```
+
+Si l'application Flask tourne sans les droits nécessaires, autoriser uniquement ce service dans `sudoers` par exemple avec `visudo` :
+```bash
+pi ALL=(root) NOPASSWD: /usr/bin/systemctl start shairport-sync, /usr/bin/systemctl stop shairport-sync, /usr/bin/systemctl is-active shairport-sync
+```
+
+Ensuite, le bouton `Activer/Couper AirPlay` démarre ou arrête `shairport-sync`, et l'état affiché dans l'interface reflète l'état réel du service.

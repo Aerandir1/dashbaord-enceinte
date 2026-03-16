@@ -22,7 +22,7 @@ pip install -r requirements.txt
 ```bash
 ./env/bin/python run.py
 ```
-Puis ouvrir: http://127.0.0.1:5000
+Puis ouvrir: https://127.0.0.1:5000
 
 ## Variables d'environnement
 Copier et adapter:
@@ -33,6 +33,7 @@ Variables principales:
 - `FLASK_HOST` (défaut: `0.0.0.0`)
 - `FLASK_PORT` (défaut: `5000`)
 - `FLASK_DEBUG` (`true`/`false`)
+- `FLASK_SSL` (`true`/`false`, défaut `true`)
 - `SECRET_KEY`
 
 ## Arborescence
