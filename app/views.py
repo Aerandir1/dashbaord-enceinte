@@ -1,9 +1,15 @@
+import base64
 import json
 import os
 import queue
+import re
+import shutil
+import struct
 import subprocess
 import threading
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 
 from flask import Response, jsonify, render_template, request, stream_with_context
@@ -23,6 +29,7 @@ from app.config import (
     LIBRESPOT_SERVICE,
     LIBRESPOT_SYSTEMD_USER,
     LIBRESPOT_USE_SUDO,
+    SHAIRPORT_METADATA_PIPE,
     SHAIRPORT_SYNC_SERVICE,
     SHAIRPORT_SYNC_SYSTEMD_USER,
     SHAIRPORT_SYNC_USE_SUDO,
@@ -203,18 +210,316 @@ SERVICE_BACKENDS = {
         "systemd_user": SHAIRPORT_SYNC_SYSTEMD_USER,
         "use_sudo": SHAIRPORT_SYNC_USE_SUDO,
         "label": "shairport-sync",
+        "process_name": "shairport-sync",
     },
     "spotify": {
         "unit": LIBRESPOT_SERVICE,
         "systemd_user": LIBRESPOT_SYSTEMD_USER,
         "use_sudo": LIBRESPOT_USE_SUDO,
         "label": "librespot",
+        "process_name": "librespot",
     },
+}
+
+_SYSTEM_VOLUME_BACKEND = None
+_AIRPLAY_METADATA_LOCK = threading.Lock()
+_AIRPLAY_METADATA = {
+    "title": None,
+    "artist": None,
+    "album": None,
+    "updated_at": None,
+}
+_AIRPLAY_REMOTE = {
+    "client_ip": None,
+    "dacp_port": None,
+    "active_remote": None,
+    "dacp_id": None,
+    "updated_at": None,
+}
+_AIRPLAY_METADATA_TTL_SECONDS = 180
+
+_META_FIELD_BY_CODE = {
+    "minm": "title",  # item name
+    "asar": "artist",  # song artist
+    "asal": "album",  # song album
 }
 
 
 def _clamp(value, low, high):
     return max(low, min(high, value))
+
+
+def _decode_meta_text(data):
+    try:
+        return data.decode("utf-8", errors="replace").replace("\x00", "").strip() or None
+    except Exception:
+        return None
+
+
+def _update_airplay_metadata(field, value):
+    with _AIRPLAY_METADATA_LOCK:
+        _AIRPLAY_METADATA[field] = value
+        _AIRPLAY_METADATA["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+
+def _clear_airplay_metadata():
+    with _AIRPLAY_METADATA_LOCK:
+        _AIRPLAY_METADATA["title"] = None
+        _AIRPLAY_METADATA["artist"] = None
+        _AIRPLAY_METADATA["album"] = None
+        _AIRPLAY_METADATA["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+
+def _update_airplay_remote(field, value):
+    with _AIRPLAY_METADATA_LOCK:
+        _AIRPLAY_REMOTE[field] = value
+        _AIRPLAY_REMOTE["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+
+def _clear_airplay_remote():
+    with _AIRPLAY_METADATA_LOCK:
+        _AIRPLAY_REMOTE["client_ip"] = None
+        _AIRPLAY_REMOTE["dacp_port"] = None
+        _AIRPLAY_REMOTE["active_remote"] = None
+        _AIRPLAY_REMOTE["dacp_id"] = None
+        _AIRPLAY_REMOTE["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+
+def _get_airplay_remote_snapshot():
+    with _AIRPLAY_METADATA_LOCK:
+        return dict(_AIRPLAY_REMOTE)
+
+
+def _get_airplay_metadata_snapshot():
+    with _AIRPLAY_METADATA_LOCK:
+        return dict(_AIRPLAY_METADATA)
+
+
+def _is_airplay_metadata_fresh(metadata):
+    updated_at = metadata.get("updated_at")
+    if not updated_at:
+        return False
+
+    try:
+        updated = datetime.fromisoformat(updated_at)
+    except ValueError:
+        return False
+
+    age_seconds = (datetime.now(timezone.utc) - updated).total_seconds()
+    return age_seconds <= _AIRPLAY_METADATA_TTL_SECONDS
+
+
+def _read_exact(stream, size):
+    chunks = []
+    remaining = size
+    while remaining > 0:
+        part = stream.read(remaining)
+        if not part:
+            return b""
+        chunks.append(part)
+        remaining -= len(part)
+    return b"".join(chunks)
+
+
+_KNOWN_FOURCC = {
+    "core",
+    "ssnc",
+    "minm",
+    "asar",
+    "asal",
+    "mdst",
+    "mden",
+    "pfls",
+    "prgr",
+    "pvol",
+    "pbeg",
+    "pend",
+    "clip",
+    "dapo",
+    "acre",
+    "daid",
+    "disc",
+    "aend",
+}
+
+
+def _decode_fourcc_hex(hex_value):
+    try:
+        raw = int(hex_value, 16)
+    except Exception:
+        return None
+
+    candidates = []
+    for byteorder in ("big", "little"):
+        try:
+            chunk = raw.to_bytes(4, byteorder=byteorder, signed=False)
+        except OverflowError:
+            continue
+        if all(32 <= b <= 126 for b in chunk):
+            candidates.append(chunk.decode("ascii", errors="ignore"))
+
+    for candidate in candidates:
+        if candidate in _KNOWN_FOURCC:
+            return candidate
+
+    return candidates[0] if candidates else None
+
+
+def _parse_xml_metadata_item(item_text):
+    type_match = re.search(r"<type>([0-9a-fA-F]+)</type>", item_text)
+    code_match = re.search(r"<code>([0-9a-fA-F]+)</code>", item_text)
+    if not type_match or not code_match:
+        return None, None, b""
+
+    item_type = _decode_fourcc_hex(type_match.group(1))
+    item_code = _decode_fourcc_hex(code_match.group(1))
+
+    payload = b""
+    data_match = re.search(r"<data encoding=\"base64\">\s*(.*?)\s*</data>", item_text, flags=re.S)
+    if data_match:
+        encoded = "".join(data_match.group(1).split())
+        if encoded:
+            try:
+                payload = base64.b64decode(encoded, validate=False)
+            except Exception:
+                payload = b""
+
+    return item_type, item_code, payload
+
+
+def _handle_airplay_metadata_item(item_type, item_code, payload):
+    if item_type == "ssnc":
+        text_payload = _decode_meta_text(payload)
+        if item_code == "clip" and text_payload:
+            _update_airplay_remote("client_ip", text_payload)
+        elif item_code == "dapo" and text_payload and text_payload.isdigit():
+            _update_airplay_remote("dacp_port", int(text_payload))
+        elif item_code == "acre" and text_payload:
+            _update_airplay_remote("active_remote", text_payload)
+        elif item_code == "daid" and text_payload:
+            _update_airplay_remote("dacp_id", text_payload)
+        elif item_code in {"disc", "aend", "pend"}:
+            _clear_airplay_remote()
+
+    if item_code in _META_FIELD_BY_CODE:
+        value = _decode_meta_text(payload)
+        if value:
+            _update_airplay_metadata(_META_FIELD_BY_CODE[item_code], value)
+            _broadcast_state()
+        return
+
+    # Do not auto-clear on ssnc events here: many sources emit transitional
+    # events quickly, which makes metadata flash and disappear.
+
+
+def _send_airplay_playback_command(action):
+    dacp_command = {
+        "play": "play",
+        "pause": "pause",
+        "next": "nextitem",
+        "previous": "previtem",
+        "toggle": "playpause",
+    }.get(action)
+
+    if not dacp_command:
+        return False, "Action playback AirPlay non supportee"
+
+    remote = _get_airplay_remote_snapshot()
+    client_ip = remote.get("client_ip")
+    dacp_port = remote.get("dacp_port")
+    active_remote = remote.get("active_remote")
+
+    if not client_ip or not dacp_port or not active_remote:
+        return (
+            False,
+            "Controle AirPlay indisponible: metadonnees DACP manquantes (lance une lecture AirPlay).",
+        )
+
+    host = client_ip
+    if host and ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+
+    url = f"http://{host}:{dacp_port}/ctrl-int/1/{dacp_command}"
+    headers = {"Active-Remote": str(active_remote)}
+    if remote.get("dacp_id"):
+        headers["Client-Daap-Id"] = str(remote["dacp_id"])
+
+    request_obj = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(request_obj, timeout=2.0) as response:
+            if 200 <= response.status < 300:
+                return True, None
+            return False, f"Commande AirPlay refusee (HTTP {response.status})"
+    except urllib.error.URLError as exc:
+        return False, f"Impossible de joindre la telecommande AirPlay ({url}): {exc}"
+    except Exception as exc:
+        return False, f"Commande AirPlay impossible: {exc}"
+
+
+def _shairport_metadata_worker(pipe_path):
+    while True:
+        try:
+            if not os.path.exists(pipe_path):
+                time.sleep(1.0)
+                continue
+
+            with open(pipe_path, "rb", buffering=0) as metadata_pipe:
+                first = metadata_pipe.read(1)
+                if not first:
+                    time.sleep(0.2)
+                    continue
+
+                # Current shairport-sync builds usually emit XML/base64 metadata on the pipe.
+                if first == b"<":
+                    xml_buffer = first.decode("utf-8", errors="replace")
+                    while True:
+                        chunk = metadata_pipe.read(4096)
+                        if not chunk:
+                            break
+                        xml_buffer += chunk.decode("utf-8", errors="replace")
+
+                        while "</item>" in xml_buffer:
+                            end_ix = xml_buffer.find("</item>") + len("</item>")
+                            item_text = xml_buffer[:end_ix]
+                            xml_buffer = xml_buffer[end_ix:]
+                            item_type, item_code, payload = _parse_xml_metadata_item(item_text)
+                            if item_type and item_code:
+                                _handle_airplay_metadata_item(item_type, item_code, payload)
+                else:
+                    # Backward-compatible parser for binary metadata framing.
+                    while True:
+                        remainder = _read_exact(metadata_pipe, 15)
+                        if not remainder:
+                            break
+                        header = first + remainder
+
+                        item_type = header[:4].decode("ascii", errors="replace")
+                        item_code = header[4:8].decode("ascii", errors="replace")
+                        payload_length = struct.unpack(">Q", header[8:16])[0]
+                        payload = _read_exact(metadata_pipe, payload_length)
+                        if payload_length > 0 and not payload:
+                            break
+
+                        _handle_airplay_metadata_item(item_type, item_code, payload)
+                        first = metadata_pipe.read(1)
+                        if not first:
+                            break
+
+        except Exception:
+            # Le flux metadata peut disparaître pendant les redémarrages de shairport-sync.
+            pass
+
+        time.sleep(0.5)
+
+
+def _start_shairport_metadata_monitor():
+    thread = threading.Thread(
+        target=_shairport_metadata_worker,
+        args=(SHAIRPORT_METADATA_PIPE,),
+        daemon=True,
+        name="shairport-metadata-monitor",
+    )
+    thread.start()
 
 
 def _run_systemctl(*args, systemd_user=False, use_sudo=False):
@@ -244,6 +549,118 @@ def _run_systemctl(*args, systemd_user=False, use_sudo=False):
         return False, "", "La commande systemctl est introuvable."
 
     return completed.returncode == 0, (completed.stdout or "").strip(), (completed.stderr or "").strip()
+
+
+def _run_command(command):
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+    except FileNotFoundError:
+        return False, "", "Commande introuvable"
+
+    return completed.returncode == 0, (completed.stdout or "").strip(), (completed.stderr or "").strip()
+
+
+def _get_system_volume_backend():
+    global _SYSTEM_VOLUME_BACKEND
+    if _SYSTEM_VOLUME_BACKEND:
+        return _SYSTEM_VOLUME_BACKEND
+
+    for candidate in ("wpctl", "pactl", "amixer"):
+        if shutil.which(candidate):
+            _SYSTEM_VOLUME_BACKEND = candidate
+            break
+
+    return _SYSTEM_VOLUME_BACKEND
+
+
+def _read_system_volume():
+    backend = _get_system_volume_backend()
+    if backend == "wpctl":
+        ok, stdout, stderr = _run_command(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"])
+        if not ok:
+            return None, None, stderr
+
+        match = re.search(r"Volume:\s*([0-9]*\.?[0-9]+)", stdout)
+        if not match:
+            return None, None, "Sortie wpctl inattendue"
+
+        volume = _clamp(int(round(float(match.group(1)) * 100)), 0, 100)
+        muted = "[MUTED]" in stdout
+        return volume, muted, None
+
+    if backend == "pactl":
+        ok_volume, stdout_volume, stderr_volume = _run_command(["pactl", "get-sink-volume", "@DEFAULT_SINK@"])
+        ok_mute, stdout_mute, stderr_mute = _run_command(["pactl", "get-sink-mute", "@DEFAULT_SINK@"])
+        if not ok_volume or not ok_mute:
+            return None, None, stderr_volume or stderr_mute
+
+        match = re.search(r"(\d+)%", stdout_volume)
+        if not match:
+            return None, None, "Sortie pactl inattendue"
+
+        volume = _clamp(int(match.group(1)), 0, 100)
+        muted = "yes" in stdout_mute.lower()
+        return volume, muted, None
+
+    if backend == "amixer":
+        ok, stdout, stderr = _run_command(["amixer", "get", "Master"])
+        if not ok:
+            return None, None, stderr
+
+        vol_match = re.findall(r"\[(\d+)%\]", stdout)
+        mute_match = re.findall(r"\[(on|off)\]", stdout)
+        if not vol_match:
+            return None, None, "Sortie amixer inattendue"
+
+        volume = _clamp(int(vol_match[-1]), 0, 100)
+        muted = bool(mute_match) and mute_match[-1] == "off"
+        return volume, muted, None
+
+    return None, None, "Aucun backend volume système disponible"
+
+
+def _set_system_volume(volume=None, mute=None):
+    backend = _get_system_volume_backend()
+    if not backend:
+        return False, "Aucun backend volume système disponible"
+
+    commands = []
+    if backend == "wpctl":
+        if volume is not None:
+            commands.append(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{_clamp(int(volume), 0, 100) / 100:.3f}"])
+        if mute is not None:
+            commands.append(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "1" if mute else "0"])
+    elif backend == "pactl":
+        if volume is not None:
+            commands.append(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{_clamp(int(volume), 0, 100)}%"])
+        if mute is not None:
+            commands.append(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "1" if mute else "0"])
+    elif backend == "amixer":
+        if volume is not None:
+            commands.append(["amixer", "-q", "set", "Master", f"{_clamp(int(volume), 0, 100)}%"])
+        if mute is not None:
+            commands.append(["amixer", "-q", "set", "Master", "mute" if mute else "unmute"])
+
+    for command in commands:
+        ok, _stdout, stderr = _run_command(command)
+        if not ok:
+            return False, stderr or "Échec de la commande volume système"
+
+    return True, None
+
+
+def _sync_system_volume_state():
+    volume, muted, _error = _read_system_volume()
+    if volume is not None:
+        SPEAKER_STATE["volume"] = volume
+    if muted is not None:
+        SPEAKER_STATE["muted"] = muted
 
 
 def _get_service_backend(service):
@@ -301,6 +718,23 @@ def _set_service_online(service, online):
         if refreshed_online == online:
             return True, None
         time.sleep(0.3)
+
+    # Some systemd setups keep the process alive briefly; force-stop as a fallback.
+    if not online:
+        process_name = backend.get("process_name")
+        if process_name:
+            kill_command = ["pkill", "-TERM", "-x", process_name]
+            if backend["use_sudo"]:
+                kill_command = ["sudo", "-n", *kill_command]
+            _run_command(kill_command)
+
+            for _ in range(6):
+                refreshed_online, error = _get_service_status(service)
+                if error:
+                    return False, error
+                if not refreshed_online:
+                    return True, None
+                time.sleep(0.3)
 
     return False, f"Le service {backend['unit']} n'a pas atteint l'état attendu."
 
@@ -362,13 +796,30 @@ def _updated_since(iso_value):
 
 def _public_state():
     _sync_service_states()
+    _sync_system_volume_state()
+
     track = PLAYLIST[SPEAKER_STATE["track_index"]]
+    current_track = track["title"]
+    current_artist = track["artist"]
+
+    active_service_key = SPEAKER_STATE.get("active_service")
+    if active_service_key == "airplay":
+        metadata = _get_airplay_metadata_snapshot()
+        if _is_airplay_metadata_fresh(metadata):
+            current_track = metadata.get("title") or "Titre inconnu"
+            current_artist = metadata.get("artist") or "Artiste inconnu"
+        else:
+            current_track = "En attente de metadonnees AirPlay"
+            current_artist = "Demarre une lecture AirPlay"
+
     active_service_key = SPEAKER_STATE.get("active_service")
     active_service = SPEAKER_STATE["services"].get(active_service_key) if active_service_key else None
     return {
         **SPEAKER_STATE,
-        "current_track": track["title"],
-        "current_artist": track["artist"],
+        "current_track": current_track,
+        "current_artist": current_artist,
+        "airplay_metadata": _get_airplay_metadata_snapshot(),
+        "airplay_remote": _get_airplay_remote_snapshot(),
         "active_service_name": active_service["name"] if active_service else "Aucune",
         "updated_since": _updated_since(SPEAKER_STATE["updated_at"]),
     }
@@ -475,6 +926,13 @@ def api_playback():
     if not SPEAKER_STATE["services"][active_service_key]["online"]:
         return jsonify({"error": "La source audio active est hors ligne"}), 400
 
+    action = action if action in {"play", "pause", "next", "previous", "toggle"} else "toggle"
+
+    if active_service_key == "airplay":
+        ok, error = _send_airplay_playback_command(action)
+        if not ok:
+            return jsonify({"error": error}), 400
+
     if action == "play":
         SPEAKER_STATE["is_playing"] = True
     elif action == "pause":
@@ -496,18 +954,29 @@ def api_playback():
 def api_volume():
     payload = request.json or {}
 
+    _sync_system_volume_state()
+
+    target_volume = SPEAKER_STATE["volume"]
+    target_mute = SPEAKER_STATE["muted"]
+
     if "mute" in payload:
-        SPEAKER_STATE["muted"] = bool(payload["mute"])
+        target_mute = bool(payload["mute"])
 
     if "volume" in payload:
-        SPEAKER_STATE["volume"] = _clamp(int(payload["volume"]), 0, 100)
-        if SPEAKER_STATE["volume"] > 0:
-            SPEAKER_STATE["muted"] = False
+        target_volume = _clamp(int(payload["volume"]), 0, 100)
+        if target_volume > 0:
+            target_mute = False
 
     if "delta" in payload:
-        SPEAKER_STATE["volume"] = _clamp(SPEAKER_STATE["volume"] + int(payload["delta"]), 0, 100)
-        if SPEAKER_STATE["volume"] > 0:
-            SPEAKER_STATE["muted"] = False
+        target_volume = _clamp(target_volume + int(payload["delta"]), 0, 100)
+        if target_volume > 0:
+            target_mute = False
+
+    ok, error = _set_system_volume(volume=target_volume, mute=target_mute)
+    if not ok:
+        return jsonify({"error": error or "Impossible de piloter le volume système"}), 400
+
+    _sync_system_volume_state()
 
     _touch_state()
     return jsonify(_public_state())
@@ -561,6 +1030,14 @@ def api_services():
             ok, error = _set_service_online(service, desired_online)
             if not ok:
                 return jsonify({"error": error}), 400
+
+            if service == "airplay" and not desired_online:
+                _clear_airplay_metadata()
+                _clear_airplay_remote()
+                SPEAKER_STATE["is_playing"] = False
+                if SPEAKER_STATE.get("active_service") == "airplay":
+                    SPEAKER_STATE["active_service"] = None
+
             _sync_service_states()
         else:
             SPEAKER_STATE["services"][service]["online"] = desired_online
@@ -575,4 +1052,7 @@ def api_services():
 
     _touch_state()
     return jsonify(_public_state())
+
+
+_start_shairport_metadata_monitor()
 
