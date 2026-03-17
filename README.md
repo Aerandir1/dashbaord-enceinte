@@ -22,7 +22,6 @@ pip install -r requirements.txt
 ```bash
 ./env/bin/python run.py
 ```
-Puis ouvrir: https://127.0.0.1:5000
 
 ## Variables d'environnement
 Copier et adapter:
