@@ -1,0 +1,18 @@
+# Copier ce fichier en .env sur la Raspberry Pi
+FLASK_HOST=0.0.0.0
+FLASK_PORT=5000
+FLASK_DEBUG=false
+FLASK_SSL=true
+SECRET_KEY=change-me-on-raspberry
+D_APP_ID=1200420960103822
+
+# AirPlay (service systemd)
+SHAIRPORT_SYNC_SERVICE=shairport-sync
+SHAIRPORT_SYNC_SYSTEMD_USER=false
+SHAIRPORT_SYNC_USE_SUDO=true
+SHAIRPORT_METADATA_PIPE=/tmp/shairport-sync-metadata
+
+# Spotify Connect (service systemd user, sans sudo)
+LIBRESPOT_SERVICE=librespot
+LIBRESPOT_SYSTEMD_USER=true
+LIBRESPOT_USE_SUDO=false
