@@ -1,0 +1,7 @@
+# Autorise le dashboard a piloter UNIQUEMENT les deux services audio.
+# Installe vers /etc/sudoers.d/dashboard-enceinte (mode 0440).
+#
+# Portee volontairement minimale : demarrer, arreter et lire l'etat de
+# shairport-sync et librespot. Aucun autre droit root n'est accorde.
+
+@RUN_USER@ ALL=(root) NOPASSWD: /usr/bin/systemctl start shairport-sync, /usr/bin/systemctl stop shairport-sync, /usr/bin/systemctl is-active shairport-sync, /usr/bin/systemctl start librespot, /usr/bin/systemctl stop librespot, /usr/bin/systemctl is-active librespot

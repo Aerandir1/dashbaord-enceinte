@@ -1,0 +1,31 @@
+[Unit]
+Description=librespot (Spotify Connect) pour l'enceinte
+Documentation=https://github.com/librespot-org/librespot
+After=network-online.target sound.target avahi-daemon.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@RUN_USER@
+# Acces a la carte son via ALSA.
+SupplementaryGroups=audio
+EnvironmentFile=/etc/default/enceinte
+
+# ATTENTION : pas d'ordonnancement temps reel ici (contrairement a
+# shairport-sync). librespot est une application asynchrone (tokio) dont tous
+# les threads - reseau et TLS compris - heriteraient de SCHED_FIFO. Sur un Pi 3
+# ils se starvent mutuellement : le websocket Spotify tombe en boucle et
+# librespot finit sur "device became inactive". Il tamponne largement en amont,
+# la priorite temps reel lui est donc inutile.
+ExecStart=/usr/local/bin/librespot \
+    --name "${SPOTIFY_NAME}" \
+    --bitrate ${SPOTIFY_BITRATE} \
+    --backend alsa \
+    --device ${ALSA_DEVICE} \
+    --cache /var/cache/librespot
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
