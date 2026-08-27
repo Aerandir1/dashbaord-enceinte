@@ -170,9 +170,6 @@ body[data-theme="light"] .service-logo.airplay {
     grid-column: span 2;
   }
 
-  .spectrum-panel {
-    grid-column: span 2;
-  }
 }
 
 header.panel {
@@ -279,74 +276,6 @@ h2 {
   background: transparent;
   border-color: var(--panel-border);
   color: var(--text);
-}
-
-/* ── Spectrum Analyzer ─────────────────────────────── */
-.spectrum-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.spectrum-header h2 {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.spectrum-fft-label {
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--primary);
-  background: rgba(37, 99, 235, 0.14);
-  border: 1px solid rgba(37, 99, 235, 0.4);
-  border-radius: 4px;
-  padding: 1px 5px;
-  vertical-align: middle;
-}
-
-.spectrum-controls {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-#spectrumDevice {
-  min-width: 240px;
-}
-
-.spectrum-hint {
-  margin: 0 0 10px;
-  font-size: 0.82rem;
-  color: var(--muted);
-  font-style: italic;
-}
-
-#spectrumCanvas {
-  display: block;
-  width: 100%;
-  height: 140px;
-  border-radius: 10px;
-  background: transparent;
-}
-
-.spectrum-axis {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 4px;
-  font-size: 0.68rem;
-  color: var(--muted);
-  padding: 0 2px;
-}
-
-.spectrum-toggle.active {
-  border-color: var(--danger);
-  color: var(--danger);
 }
 
 /* Bouton thème synchronisé avec le système */
