@@ -57,7 +57,8 @@ COPY run.py ./run.py
 COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/librespot-run.sh /usr/local/bin/librespot-run.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/librespot-run.sh
+COPY docker/rt-exec.sh /usr/local/bin/rt-exec.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/librespot-run.sh /usr/local/bin/rt-exec.sh
 
 # Valeurs par défaut : pilotage des services via supervisor dans le conteneur.
 ENV SERVICE_MANAGER=supervisor \
@@ -76,6 +77,8 @@ ENV SERVICE_MANAGER=supervisor \
     FLASK_SSL=false \
     SPOTIFY_AUTOSTART=true \
     AIRPLAY_AUTOSTART=true \
+    AUDIO_RT_PRIORITY=45 \
+    STATE_CACHE_TTL_SECONDS=3.0 \
     SPOTIFY_NAME="Enceinte Spotify" \
     SPOTIFY_BITRATE=320 \
     AIRPLAY_NAME="Enceinte AirPlay" \

@@ -227,6 +227,13 @@ SERVICE_BACKENDS = {
 }
 
 _SYSTEM_VOLUME_BACKEND = None
+
+# Durée de validité de l'état système (services + volume). Sans ce cache, chaque
+# requête HTTP et chaque diffusion SSE relançait des sous-processus, provoquant
+# des pics CPU qui coupaient l'audio (craquements) sur un Raspberry Pi.
+_STATE_CACHE_TTL_SECONDS = float(os.getenv("STATE_CACHE_TTL_SECONDS", "3.0"))
+_SERVICE_SYNC_AT = [0.0]
+_VOLUME_SYNC_AT = [0.0]
 _AIRPLAY_METADATA_LOCK = threading.Lock()
 _AIRPLAY_METADATA = {
     "title": None,
@@ -743,7 +750,12 @@ def _set_system_volume(volume=None, mute=None):
     return True, None
 
 
-def _sync_system_volume_state():
+def _sync_system_volume_state(force=False):
+    now = time.monotonic()
+    if not force and (now - _VOLUME_SYNC_AT[0]) < _STATE_CACHE_TTL_SECONDS:
+        return
+    _VOLUME_SYNC_AT[0] = now
+
     volume, muted, _error = _read_system_volume()
     if volume is not None:
         SPEAKER_STATE["volume"] = volume
@@ -844,11 +856,38 @@ def _set_service_online(service, online):
     return False, f"Le service {backend['unit']} n'a pas atteint l'état attendu."
 
 
-def _sync_service_states():
+def _supervisor_status_all():
+    """État de toutes les unités en UN seul appel supervisorctl.
+
+    Lancer supervisorctl coûte un démarrage d'interpréteur Python complet
+    (~1,5 s sur un Pi 3) : en faire un par service à chaque rafraîchissement
+    saturait le CPU et affamait le thread audio.
+    """
+    _ok, stdout, stderr = _run_supervisorctl("status")
+    states = {}
+    for line in (stdout or stderr or "").splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            states[parts[0]] = parts[1].upper() == "RUNNING"
+    return states
+
+
+def _sync_service_states(force=False):
+    now = time.monotonic()
+    if not force and (now - _SERVICE_SYNC_AT[0]) < _STATE_CACHE_TTL_SECONDS:
+        return
+    _SERVICE_SYNC_AT[0] = now
+
+    supervisor_states = _supervisor_status_all() if SERVICE_MANAGER == "supervisor" else None
+
     for service in SPEAKER_STATE["services"]:
-        if service in SERVICE_BACKENDS:
+        if service not in SERVICE_BACKENDS:
+            continue
+        if supervisor_states is not None:
+            online = supervisor_states.get(SERVICE_BACKENDS[service]["unit"], False)
+        else:
             online, _error = _get_service_status(service)
-            SPEAKER_STATE["services"][service]["online"] = online
+        SPEAKER_STATE["services"][service]["online"] = online
 
     active_service_key = SPEAKER_STATE.get("active_service")
     if active_service_key and not SPEAKER_STATE["services"][active_service_key]["online"]:
@@ -1059,7 +1098,8 @@ def api_playback():
 def api_volume():
     payload = request.json or {}
 
-    _sync_system_volume_state()
+    # Lecture fraîche : le calcul d'un delta doit partir du volume réel.
+    _sync_system_volume_state(force=True)
 
     target_volume = SPEAKER_STATE["volume"]
     target_mute = SPEAKER_STATE["muted"]
@@ -1081,7 +1121,7 @@ def api_volume():
     if not ok:
         return jsonify({"error": error or "Impossible de piloter le volume système"}), 400
 
-    _sync_system_volume_state()
+    _sync_system_volume_state(force=True)
 
     _touch_state()
     return jsonify(_public_state())
@@ -1127,7 +1167,8 @@ def api_services():
     if "online" in payload:
         desired_online = bool(payload["online"])
     elif action == "toggle":
-        _sync_service_states()
+        # Basculer exige l'état réel, pas une valeur potentiellement périmée.
+        _sync_service_states(force=True)
         desired_online = not SPEAKER_STATE["services"][service]["online"]
 
     if desired_online is not None:
@@ -1143,17 +1184,17 @@ def api_services():
                 if SPEAKER_STATE.get("active_service") == "airplay":
                     SPEAKER_STATE["active_service"] = None
 
-            _sync_service_states()
+            _sync_service_states(force=True)
         else:
             SPEAKER_STATE["services"][service]["online"] = desired_online
 
     if payload.get("select") or action == "select":
-        _sync_service_states()
+        _sync_service_states(force=True)
         if not SPEAKER_STATE["services"][service]["online"]:
             return jsonify({"error": "Service hors ligne"}), 400
         SPEAKER_STATE["active_service"] = service
 
-    _sync_service_states()
+    _sync_service_states(force=True)
 
     _touch_state()
     return jsonify(_public_state())
