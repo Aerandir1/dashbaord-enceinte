@@ -1,0 +1,35 @@
+services:
+  enceinte-dashboard:
+    build: .
+    image: dashboard-enceinte:latest
+    container_name: dashboard-enceinte
+    restart: unless-stopped
+
+    # network_mode: host est REQUIS : la découverte mDNS/Bonjour d'AirPlay et de
+    # Spotify Connect ne fonctionne pas dans un réseau Docker isolé (NAT).
+    # Conséquence : la directive `ports:` est ignorée, le dashboard est joignable
+    # directement sur http://<ip-hote>:${FLASK_PORT:-5000}.
+    network_mode: host
+
+    # Accès à la carte son de l'hôte via ALSA (librespot, shairport-sync, amixer).
+    devices:
+      - "/dev/snd:/dev/snd"
+
+    # Copiez .env.docker.example en .env puis décommentez pour personnaliser.
+    # env_file:
+    #   - .env
+    environment:
+      # Nom secret Flask (à changer !)
+      SECRET_KEY: "change-me"
+      # Nom annoncé sur le réseau
+      AIRPLAY_NAME: "Enceinte Salon"
+      SPOTIFY_NAME: "Enceinte Salon"
+      # Périphérique ALSA de sortie (ex : default, hw:0, plughw:1,0)
+      ALSA_DEVICE: "default"
+      FLASK_PORT: "5000"
+      # HTTP par défaut ; passez à "true" pour un certificat auto-signé (HTTPS)
+      FLASK_SSL: "false"
+
+    # Persistance optionnelle du cache librespot / des credentials
+    # volumes:
+    #   - ./data/librespot:/var/cache/librespot

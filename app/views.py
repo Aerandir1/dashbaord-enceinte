@@ -29,10 +29,13 @@ from app.config import (
     LIBRESPOT_SERVICE,
     LIBRESPOT_SYSTEMD_USER,
     LIBRESPOT_USE_SUDO,
+    SERVICE_MANAGER,
     SHAIRPORT_METADATA_PIPE,
     SHAIRPORT_SYNC_SERVICE,
     SHAIRPORT_SYNC_SYSTEMD_USER,
     SHAIRPORT_SYNC_USE_SUDO,
+    SUPERVISORCTL_BIN,
+    SUPERVISORD_CONFIG,
 )
 
 
@@ -551,6 +554,11 @@ def _run_systemctl(*args, systemd_user=False, use_sudo=False):
     return completed.returncode == 0, (completed.stdout or "").strip(), (completed.stderr or "").strip()
 
 
+def _run_supervisorctl(*args):
+    command = [SUPERVISORCTL_BIN, "-c", SUPERVISORD_CONFIG, *args]
+    return _run_command(command)
+
+
 def _run_command(command):
     try:
         completed = subprocess.run(
@@ -672,6 +680,15 @@ def _get_service_status(service):
     if not backend:
         return SPEAKER_STATE["services"][service]["online"], None
 
+    if SERVICE_MANAGER == "supervisor":
+        # supervisorctl status renvoie un code non nul quand le process est
+        # arrêté : on se fie donc au libellé d'état, pas au code retour.
+        _ok, stdout, stderr = _run_supervisorctl("status", backend["unit"])
+        text = (stdout or stderr or "").strip()
+        parts = text.split()
+        state = parts[1].upper() if len(parts) >= 2 else ""
+        return state == "RUNNING", None
+
     ok, stdout, stderr = _run_systemctl(
         "is-active",
         backend["unit"],
@@ -700,15 +717,21 @@ def _set_service_online(service, online):
         return True, None
 
     action = "start" if online else "stop"
-    ok, _stdout, stderr = _run_systemctl(
-        action,
-        backend["unit"],
-        systemd_user=backend["systemd_user"],
-        use_sudo=backend["use_sudo"],
-    )
-    if not ok:
-        reason = stderr or f"La commande systemctl {action} a échoué."
-        return False, f"Impossible de {'démarrer' if online else 'arrêter'} {backend['label']} : {reason}"
+
+    if SERVICE_MANAGER == "supervisor":
+        # supervisorctl peut renvoyer un code non nul ("already started" /
+        # "not running") : l'état réel est confirmé par la boucle de vérification.
+        _run_supervisorctl(action, backend["unit"])
+    else:
+        ok, _stdout, stderr = _run_systemctl(
+            action,
+            backend["unit"],
+            systemd_user=backend["systemd_user"],
+            use_sudo=backend["use_sudo"],
+        )
+        if not ok:
+            reason = stderr or f"La commande systemctl {action} a échoué."
+            return False, f"Impossible de {'démarrer' if online else 'arrêter'} {backend['label']} : {reason}"
 
     # Un service peut passer brièvement à "active" avant de crasher.
     for _ in range(6):
@@ -720,7 +743,9 @@ def _set_service_online(service, online):
         time.sleep(0.3)
 
     # Some systemd setups keep the process alive briefly; force-stop as a fallback.
-    if not online:
+    # Inutile avec supervisor : "supervisorctl stop" arrête réellement le process
+    # (et un pkill ferait redémarrer le programme si autorestart est actif).
+    if not online and SERVICE_MANAGER != "supervisor":
         process_name = backend.get("process_name")
         if process_name:
             kill_command = ["pkill", "-TERM", "-x", process_name]
