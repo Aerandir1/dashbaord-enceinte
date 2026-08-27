@@ -1,5 +1,8 @@
 // Ordre des entrées dans le sélecteur : il pilote la position du témoin.
-const SOURCE_ORDER = ['spotify', 'airplay', 'none'];
+// "musicassistant" occupe sa place mais n'est pas encore branchée côté
+// serveur ; elle est annoncée dans l'interface et reste non sélectionnable.
+const SOURCE_ORDER = ['spotify', 'airplay', 'musicassistant', 'none'];
+const SOURCE_PLANNED = new Set(['musicassistant']);
 
 async function callApi(url, payload) {
   const response = await fetch(url, {
@@ -270,6 +273,8 @@ const sourceSelector = document.getElementById('sourceSelector');
 
 async function selectSource(source) {
   if (!sourceSelector || sourceSelector.classList.contains('is-busy')) return;
+  // Le serveur ne connaît pas encore cette source : ne rien tenter.
+  if (SOURCE_PLANNED.has(source)) return;
   if (source === (sourceSelector.dataset.source || 'none')) return;
 
   // Le témoin part immédiatement vers la cible : le retour est instantané,
@@ -297,12 +302,19 @@ if (sourceSelector) {
     const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
     if (!step) return;
     event.preventDefault();
-    const current = SOURCE_ORDER.indexOf(sourceSelector.dataset.source || 'none');
-    const next = (current + step + SOURCE_ORDER.length) % SOURCE_ORDER.length;
-    const target = sourceSelector.querySelector(`[data-source="${SOURCE_ORDER[next]}"]`);
+
+    // Saute les entrées annoncées mais pas encore disponibles, plutôt que d'y
+    // laisser le focus bloqué sur un choix impossible.
+    let index = SOURCE_ORDER.indexOf(sourceSelector.dataset.source || 'none');
+    for (let hops = 0; hops < SOURCE_ORDER.length; hops += 1) {
+      index = (index + step + SOURCE_ORDER.length) % SOURCE_ORDER.length;
+      if (!SOURCE_PLANNED.has(SOURCE_ORDER[index])) break;
+    }
+
+    const target = sourceSelector.querySelector(`[data-source="${SOURCE_ORDER[index]}"]`);
     if (target) {
       target.focus();
-      selectSource(SOURCE_ORDER[next]);
+      selectSource(SOURCE_ORDER[index]);
     }
   });
 }
