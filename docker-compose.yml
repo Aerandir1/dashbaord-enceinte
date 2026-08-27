@@ -32,8 +32,15 @@ services:
       # Nom annoncé sur le réseau
       AIRPLAY_NAME: "Enceinte Salon"
       SPOTIFY_NAME: "Enceinte Salon"
-      # Périphérique ALSA de sortie (ex : default, hw:0, plughw:1,0)
-      ALSA_DEVICE: "default"
+      # Périphérique ALSA de sortie. Viser le DAC en direct (hw:0 = HiFiBerry
+      # DAC+) plutôt que "default" : dmix ajoute un rééchantillonnage logiciel
+      # et empêche shairport-sync de piloter la cadence -> craquements.
+      ALSA_DEVICE: "hw:0"
+      # Tampon AirPlay : à monter (0.5 / 0.8) si le WiFi est faible.
+      AIRPLAY_BUFFER_SECONDS: "0.35"
+      AIRPLAY_INTERPOLATION: "basic"
+      # Passer à 1 ou 2 pour diagnostiquer les resynchronisations AirPlay.
+      AIRPLAY_LOG_VERBOSITY: "0"
       FLASK_PORT: "5000"
       # HTTP par défaut ; passez à "true" pour un certificat auto-signé (HTTPS)
       FLASK_SSL: "false"
