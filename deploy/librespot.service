@@ -9,6 +9,12 @@ Wants=network-online.target
 # main, hors du dashboard.
 Conflicts=shairport-sync.service
 
+# Garde-fou : si les deux services devaient malgre tout se relancer
+# mutuellement, systemd coupe court au bout de 5 demarrages en 60 s au lieu de
+# laisser tourner un ping-pong indefini.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
 [Service]
 Type=simple
 User=@RUN_USER@
@@ -43,7 +49,12 @@ ExecStart=/usr/local/bin/librespot \
     --cache /var/cache/librespot \
     --onevent /usr/local/bin/librespot-event.sh
 
-Restart=always
+# PAS "always" : combine a Conflicts=, il ressuscitait librespot juste apres
+# que shairport-sync l'ait arrete, ce qui arretait shairport-sync a son tour --
+# les deux services se relancaient en boucle indefiniment. "on-failure" ne
+# redemarre qu'apres un vrai plantage, jamais apres un arret propre.
+# (C'est aussi le reglage du paquet Debian de shairport-sync.)
+Restart=on-failure
 RestartSec=5
 
 [Install]
