@@ -37,6 +37,12 @@ alsa = {
   # via "default"/dmix, shairport-sync ne maîtrise plus la cadence de sortie,
   # ce qui provoque des craquements et des resynchronisations.
   output_device = "${ALSA_DEVICE:-default}";
+  # Tampon matériel explicite. Sur un DAC attaqué en direct (hw:N), les valeurs
+  # par défaut sont trop justes : shairport-sync écrit par blocs de 352
+  # échantillons (8 ms) et la carte tombe en underrun ~50 fois par minute,
+  # chaque underrun produisant un clic audible.
+  period_size = ${ALSA_PERIOD_SIZE:-1024};
+  buffer_size = ${ALSA_BUFFER_SIZE:-16384};
 ${AIRPLAY_MIXER_CONTROL:+  mixer_control_name = \"${AIRPLAY_MIXER_CONTROL}\";}
 };
 
