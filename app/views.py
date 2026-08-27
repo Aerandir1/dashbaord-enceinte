@@ -26,6 +26,8 @@ except Exception:  # pragma: no cover
 
 from app import app
 from app.config import (
+    ALSA_MIXER_CARD,
+    ALSA_MIXER_CONTROL,
     LIBRESPOT_SERVICE,
     LIBRESPOT_SYSTEMD_USER,
     LIBRESPOT_USE_SUDO,
@@ -587,6 +589,65 @@ def _get_system_volume_backend():
     return _SYSTEM_VOLUME_BACKEND
 
 
+# Noms de contrôles ALSA testés, par ordre de préférence. "Master" n'existe pas
+# sur toutes les cartes : un HiFiBerry DAC+ expose son volume via "Digital".
+_ALSA_CONTROL_CANDIDATES = (
+    "Master",
+    "Digital",
+    "PCM",
+    "Speaker",
+    "Headphone",
+    "Analogue",
+    "Playback",
+)
+
+_ALSA_MIXER_CONTROL_CACHE = None
+
+
+def _amixer_command(*args):
+    command = ["amixer"]
+    if ALSA_MIXER_CARD:
+        command.extend(["-c", ALSA_MIXER_CARD])
+    command.extend(args)
+    return command
+
+
+def _alsa_control_has_volume(name):
+    ok, stdout, _stderr = _run_command(_amixer_command("get", name))
+    # Un contrôle utilisable expose un volume de lecture en pourcentage.
+    return ok and "Playback" in stdout and "%]" in stdout
+
+
+def _alsa_control_has_switch(name):
+    ok, stdout, _stderr = _run_command(_amixer_command("get", name))
+    return ok and "pswitch" in stdout.lower()
+
+
+def _get_alsa_mixer_control():
+    global _ALSA_MIXER_CONTROL_CACHE
+    if _ALSA_MIXER_CONTROL_CACHE:
+        return _ALSA_MIXER_CONTROL_CACHE
+
+    if ALSA_MIXER_CONTROL:
+        _ALSA_MIXER_CONTROL_CACHE = ALSA_MIXER_CONTROL
+        return _ALSA_MIXER_CONTROL_CACHE
+
+    ok, stdout, _stderr = _run_command(_amixer_command("scontrols"))
+    if not ok:
+        return None
+
+    available = re.findall(r"Simple mixer control '([^']+)'", stdout)
+    ordered = [name for name in _ALSA_CONTROL_CANDIDATES if name in available]
+    ordered.extend(name for name in available if name not in ordered)
+
+    for name in ordered:
+        if _alsa_control_has_volume(name):
+            _ALSA_MIXER_CONTROL_CACHE = name
+            break
+
+    return _ALSA_MIXER_CONTROL_CACHE
+
+
 def _read_system_volume():
     backend = _get_system_volume_backend()
     if backend == "wpctl":
@@ -617,7 +678,11 @@ def _read_system_volume():
         return volume, muted, None
 
     if backend == "amixer":
-        ok, stdout, stderr = _run_command(["amixer", "get", "Master"])
+        control = _get_alsa_mixer_control()
+        if not control:
+            return None, None, "Aucun contrôle de volume ALSA détecté"
+
+        ok, stdout, stderr = _run_command(_amixer_command("get", control))
         if not ok:
             return None, None, stderr
 
@@ -650,10 +715,25 @@ def _set_system_volume(volume=None, mute=None):
         if mute is not None:
             commands.append(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "1" if mute else "0"])
     elif backend == "amixer":
-        if volume is not None:
-            commands.append(["amixer", "-q", "set", "Master", f"{_clamp(int(volume), 0, 100)}%"])
+        control = _get_alsa_mixer_control()
+        if not control:
+            return False, "Aucun contrôle de volume ALSA détecté"
+
+        target_volume = _clamp(int(volume), 0, 100) if volume is not None else None
+
+        # Certaines cartes (HiFiBerry DAC+ / "Digital") n'ont pas d'interrupteur
+        # mute : on l'émule alors en descendant le volume à 0.
+        if mute is not None and not _alsa_control_has_switch(control):
+            if mute:
+                target_volume = 0
+            elif target_volume is None:
+                target_volume = _clamp(int(SPEAKER_STATE["volume"]), 0, 100)
+            mute = None
+
+        if target_volume is not None:
+            commands.append(_amixer_command("-q", "set", control, f"{target_volume}%"))
         if mute is not None:
-            commands.append(["amixer", "-q", "set", "Master", "mute" if mute else "unmute"])
+            commands.append(_amixer_command("-q", "set", control, "mute" if mute else "unmute"))
 
     for command in commands:
         ok, _stdout, stderr = _run_command(command)

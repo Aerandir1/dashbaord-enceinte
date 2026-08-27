@@ -21,5 +21,10 @@ SHAIRPORT_METADATA_PIPE = os.getenv("SHAIRPORT_METADATA_PIPE", "/tmp/shairport-s
 # Gestionnaire de services utilisé pour piloter librespot / shairport-sync.
 # "systemd" (Raspberry Pi natif) ou "supervisor" (conteneur Docker).
 SERVICE_MANAGER = os.getenv("SERVICE_MANAGER", "systemd").strip().lower()
+
+# Contrôle ALSA utilisé pour le volume. Vide = détection automatique : toutes
+# les cartes n'exposent pas "Master" (ex. HiFiBerry DAC+ expose "Digital").
+ALSA_MIXER_CONTROL = os.getenv("ALSA_MIXER_CONTROL", "").strip()
+ALSA_MIXER_CARD = os.getenv("ALSA_MIXER_CARD", "").strip()
 SUPERVISORCTL_BIN = os.getenv("SUPERVISORCTL_BIN", "supervisorctl")
 SUPERVISORD_CONFIG = os.getenv("SUPERVISORD_CONFIG", "/etc/supervisor/supervisord.conf")
