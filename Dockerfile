@@ -12,27 +12,34 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1
 
 # --- Paquets système : audio (ALSA), découverte mDNS (avahi), supervisor ---
+# libpulse0 est requis car le binaire librespot (build raspotify) est lié à
+# libpulse même lorsqu'on utilise la sortie ALSA.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        ca-certificates curl gnupg \
+        ca-certificates curl \
         supervisor \
         dbus \
         avahi-daemon libnss-mdns \
         shairport-sync \
-        alsa-utils libasound2 libasound2-plugins \
+        alsa-utils libasound2 libasound2-plugins libpulse0 \
         libportaudio2 \
     ; \
-    # librespot : binaire "vanilla" distribué via le dépôt apt raspotify
-    # (multi-arch : amd64 / arm64 / armhf), évite toute compilation Rust.
-    curl -fsSL https://dtcooper.github.io/raspotify/key.asc \
-        | gpg --dearmor -o /usr/share/keyrings/raspotify_key.gpg; \
-    echo 'deb [signed-by=/usr/share/keyrings/raspotify_key.gpg] https://dtcooper.github.io/raspotify raspotify main' \
-        > /etc/apt/sources.list.d/raspotify.list; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends librespot; \
-    apt-get purge -y --auto-remove gnupg; \
     rm -rf /var/lib/apt/lists/*
+
+# --- librespot : on extrait uniquement le binaire du paquet raspotify ---
+# Le paquet raspotify dépend de systemd (inutile ici) : on ne l'installe donc
+# pas, on récupère seulement /usr/bin/librespot. L'architecture est déduite du
+# conteneur (dpkg), donc l'image reste multi-arch (amd64 / arm64 / armhf …).
+RUN set -eux; \
+    rarch="$(dpkg --print-architecture)"; \
+    pkgs="https://dtcooper.github.io/raspotify/dists/raspotify/main/binary-${rarch}/Packages"; \
+    deb_path="$(curl -fsSL "$pkgs" | awk '/^Package: raspotify$/{f=1} f&&/^Filename:/{print $2; exit}')"; \
+    test -n "$deb_path"; \
+    curl -fsSL "https://dtcooper.github.io/raspotify/${deb_path}" -o /tmp/raspotify.deb; \
+    dpkg-deb --fsys-tarfile /tmp/raspotify.deb | tar -x -C / ./usr/bin/librespot; \
+    rm -f /tmp/raspotify.deb; \
+    /usr/bin/librespot --version
 
 WORKDIR /app
 
