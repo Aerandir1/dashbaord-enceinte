@@ -116,8 +116,28 @@ read_env() {
 }
 
 AIRPLAY_NAME="$(read_env AIRPLAY_NAME "$(read_env SPOTIFY_NAME Enceinte)")"
-ALSA_DEVICE="$(read_env ALSA_DEVICE hw:0)"
+ALSA_DEVICE="$(read_env ALSA_DEVICE default)"
 FLASK_PORT="$(read_env FLASK_PORT 5001)"
+
+# --- Peripherique ALSA partage (dmix) ---------------------------------------
+# Un acces direct au materiel (hw:N) est EXCLUSIF : le premier des deux
+# services qui ouvre la carte rend l'autre muet. On passe par dmix, cale sur
+# 44100 Hz pour ne rien reechantillonner.
+CARD_INDEX="$(printf '%s' "$ALSA_DEVICE" | sed -n 's/^\(plug\)\?hw:\([0-9]\{1,\}\).*/\2/p')"
+CARD_INDEX="${CARD_INDEX:-0}"
+
+case "$ALSA_DEVICE" in
+    hw:*|plughw:*)
+        echo "==> ALSA_DEVICE=${ALSA_DEVICE} donne un acces EXCLUSIF a la carte :"
+        echo "    AirPlay et Spotify ne peuvent pas coexister. Bascule vers 'default'"
+        echo "    (dmix 44100 Hz, sans reechantillonnage), carte ${CARD_INDEX}."
+        sed -i "s|^ALSA_DEVICE=.*|ALSA_DEVICE=default|" "$ENV_FILE"
+        ALSA_DEVICE="default"
+        ;;
+esac
+
+echo "==> Configuration ALSA partagee (/etc/asound.conf, carte ${CARD_INDEX})"
+sed -e "s|@CARD_INDEX@|${CARD_INDEX}|g" "${DEPLOY_DIR}/asound.conf" > /etc/asound.conf
 
 # --- 6. Configuration shairport-sync ----------------------------------------
 echo "==> Configuration shairport-sync (sortie ${ALSA_DEVICE})"
