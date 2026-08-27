@@ -15,6 +15,14 @@ services:
     devices:
       - "/dev/snd:/dev/snd"
 
+    # Autorise shairport-sync / librespot à utiliser l'ordonnancement temps réel
+    # (SCHED_FIFO). Sans ça, l'audio "saute" dès que le CPU est un peu chargé.
+    cap_add:
+      - SYS_NICE
+    ulimits:
+      rtprio: 99
+      memlock: -1
+
     # Copiez .env.docker.example en .env puis décommentez pour personnaliser.
     # env_file:
     #   - .env
