@@ -9,8 +9,26 @@ User=@RUN_USER@
 # amixer a besoin du groupe audio pour piloter le volume de la carte.
 SupplementaryGroups=audio
 WorkingDirectory=@APP_DIR@
+
+# Valeurs par defaut : /etc/default/enceinte, charge ensuite, les surcharge.
+# Elles garantissent que l'unite demarre meme si une cle manque au fichier.
+Environment=FLASK_HOST=0.0.0.0
+Environment=FLASK_PORT=5001
+Environment=WAITRESS_THREADS=16
+Environment=WAITRESS_CHANNEL_TIMEOUT=300
 EnvironmentFile=/etc/default/enceinte
-ExecStart=@APP_DIR@/.venv/bin/python @APP_DIR@/run.py
+
+# Serveur WSGI de production (waitress) plutot que le serveur de developpement
+# de Flask, qui n'est pas prevu pour etre expose sur le reseau.
+#
+# --threads : le dashboard utilise du SSE (EventSource), et chaque onglet
+# ouvert monopolise un thread pendant toute la duree de la connexion. Avec les
+# 4 threads par defaut, quelques onglets suffiraient a figer l'interface.
+ExecStart=@APP_DIR@/.venv/bin/waitress-serve \
+    --listen=${FLASK_HOST}:${FLASK_PORT} \
+    --threads=${WAITRESS_THREADS} \
+    --channel-timeout=${WAITRESS_CHANNEL_TIMEOUT} \
+    run:app
 
 # Le dashboard cede le CPU aux services audio en cas de contention : c'est lui
 # qui, en interrogeant les services en boucle, provoquait des craquements.

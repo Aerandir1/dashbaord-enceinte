@@ -9,6 +9,12 @@ Type=simple
 User=@RUN_USER@
 # Acces a la carte son via ALSA.
 SupplementaryGroups=audio
+
+# Valeurs par defaut, surchargees ensuite par /etc/default/enceinte : l'unite
+# demarre meme si une cle manque au fichier.
+Environment=SPOTIFY_NAME=Enceinte
+Environment=SPOTIFY_BITRATE=320
+Environment=ALSA_DEVICE=hw:0
 EnvironmentFile=/etc/default/enceinte
 
 # ATTENTION : pas d'ordonnancement temps reel ici (contrairement a

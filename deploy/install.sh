@@ -87,7 +87,17 @@ if [ ! -f "$ENV_FILE" ]; then
     SECRET="$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)"
     sed -i "s/^SECRET_KEY=.*/SECRET_KEY=${SECRET}/" "$ENV_FILE"
 else
-    echo "==> ${ENV_FILE} existe deja, conserve tel quel"
+    # On ne touche pas aux valeurs existantes, mais une mise a jour du projet
+    # peut introduire de nouvelles cles : on ajoute uniquement celles-la.
+    echo "==> ${ENV_FILE} existe deja : ajout des cles manquantes uniquement"
+    while IFS= read -r line; do
+        case "$line" in ''|\#*) continue ;; esac
+        key="${line%%=*}"
+        if ! grep -q "^${key}=" "$ENV_FILE"; then
+            printf '%s\n' "$line" >> "$ENV_FILE"
+            echo "    + ${key}"
+        fi
+    done < "${DEPLOY_DIR}/enceinte.env"
 fi
 
 # Valeurs necessaires a la generation de la config shairport-sync.

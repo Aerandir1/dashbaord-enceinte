@@ -1034,7 +1034,10 @@ def api_stream():
 
     headers = {
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+        # Pas de "Connection: keep-alive" ici : c'est un en-tete hop-by-hop,
+        # interdit a une application WSGI (PEP 3333). Le serveur de
+        # developpement le tolerait, waitress leve une AssertionError. La
+        # connexion persistante est de toute facon geree par HTTP/1.1.
         "X-Accel-Buffering": "no",
     }
     return Response(stream_with_context(event_stream()), headers=headers, mimetype="text/event-stream")
