@@ -100,11 +100,20 @@ else
     done < "${DEPLOY_DIR}/enceinte.env"
 fi
 
-# Valeurs necessaires a la generation de la config shairport-sync.
-# shellcheck disable=SC1090
-set -a; . "$ENV_FILE"; set +a
-AIRPLAY_NAME="${AIRPLAY_NAME:-${SPOTIFY_NAME:-Enceinte}}"
-ALSA_DEVICE="${ALSA_DEVICE:-hw:0}"
+# Lecture des valeurs necessaires a la config shairport-sync.
+# On ne source PAS le fichier : systemd accepte "NOM=Enceinte Salon" sans
+# guillemets, mais le shell y verrait la commande "Salon".
+read_env() {
+    local key="$1" default="$2" val
+    val="$(sed -n "s/^[[:space:]]*${key}=//p" "$ENV_FILE" | tail -n 1)"
+    val="${val%\"}"; val="${val#\"}"
+    val="${val%\'}"; val="${val#\'}"
+    printf '%s' "${val:-$default}"
+}
+
+AIRPLAY_NAME="$(read_env AIRPLAY_NAME "$(read_env SPOTIFY_NAME Enceinte)")"
+ALSA_DEVICE="$(read_env ALSA_DEVICE hw:0)"
+FLASK_PORT="$(read_env FLASK_PORT 5001)"
 
 # --- 6. Configuration shairport-sync ----------------------------------------
 echo "==> Configuration shairport-sync (sortie ${ALSA_DEVICE})"
@@ -138,17 +147,28 @@ fi
 # --- 9. Activation -----------------------------------------------------------
 echo "==> Activation des services"
 systemctl daemon-reload
-systemctl enable --now avahi-daemon
-systemctl enable --now shairport-sync
-systemctl enable --now librespot
-systemctl enable --now dashboard-enceinte
+
+failed=0
+for unit in avahi-daemon shairport-sync librespot dashboard-enceinte; do
+    systemctl enable "$unit" >/dev/null 2>&1 || true
+    systemctl restart "$unit" || true
+    sleep 1
+    if systemctl is-active --quiet "$unit"; then
+        echo "    OK  ${unit}"
+    else
+        failed=1
+        echo "    ECHEC  ${unit} -- dernieres lignes du journal :"
+        journalctl -u "$unit" -n 12 --no-pager -o cat 2>/dev/null | sed 's/^/        /'
+    fi
+done
 
 echo
 echo "===================================================================="
-echo " Installation terminee."
-echo
-systemctl --no-pager --lines=0 status shairport-sync librespot dashboard-enceinte 2>/dev/null \
-    | grep -E "^\s*(●|Active:|Loaded:)" || true
+if [ "$failed" -eq 0 ]; then
+    echo " Installation terminee : les trois services sont actifs."
+else
+    echo " Installation terminee AVEC DES ERREURS (voir ci-dessus)."
+fi
 echo
 echo " Dashboard : http://$(hostname -I | awk '{print $1}'):${FLASK_PORT:-5001}"
 echo " Config    : ${ENV_FILE}"
