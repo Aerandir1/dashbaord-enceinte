@@ -18,6 +18,12 @@ LIBRESPOT_SYSTEMD_USER = _get_bool_env("LIBRESPOT_SYSTEMD_USER", "true")
 LIBRESPOT_USE_SUDO = _get_bool_env("LIBRESPOT_USE_SUDO")
 SHAIRPORT_METADATA_PIPE = os.getenv("SHAIRPORT_METADATA_PIPE", "/tmp/shairport-sync-metadata")
 
+# Metadonnees Spotify, ecrites par le hook --onevent de librespot
+# (deploy/librespot-event.sh).
+LIBRESPOT_METADATA_FILE = os.getenv(
+    "LIBRESPOT_METADATA_FILE", "/run/enceinte/spotify-metadata.json"
+)
+
 # Gestionnaire de services utilisé pour piloter librespot / shairport-sync.
 # "systemd" (Raspberry Pi natif) ou "supervisor" (conteneur Docker).
 SERVICE_MANAGER = os.getenv("SERVICE_MANAGER", "systemd").strip().lower()

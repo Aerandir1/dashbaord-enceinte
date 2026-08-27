@@ -15,7 +15,14 @@ SupplementaryGroups=audio
 Environment=SPOTIFY_NAME=Enceinte
 Environment=SPOTIFY_BITRATE=320
 Environment=ALSA_DEVICE=hw:0
+Environment=LIBRESPOT_METADATA_FILE=/run/enceinte/spotify-metadata.json
 EnvironmentFile=/etc/default/enceinte
+
+# Cree /run/enceinte (proprietaire = User=) pour le fichier de metadonnees,
+# et le supprime a l'arret : le dashboard cesse alors d'afficher un titre
+# obsolete si librespot s'arrete.
+RuntimeDirectory=enceinte
+RuntimeDirectoryMode=0755
 
 # ATTENTION : pas d'ordonnancement temps reel ici (contrairement a
 # shairport-sync). librespot est une application asynchrone (tokio) dont tous
@@ -28,7 +35,8 @@ ExecStart=/usr/local/bin/librespot \
     --bitrate ${SPOTIFY_BITRATE} \
     --backend alsa \
     --device ${ALSA_DEVICE} \
-    --cache /var/cache/librespot
+    --cache /var/cache/librespot \
+    --onevent /usr/local/bin/librespot-event.sh
 
 Restart=always
 RestartSec=5

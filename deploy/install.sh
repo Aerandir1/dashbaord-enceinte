@@ -70,6 +70,10 @@ fi
 
 install -d -o "$RUN_USER" -g "$RUN_USER" /var/cache/librespot
 
+# Hook de metadonnees : librespot l'appelle a chaque changement de piste et il
+# ecrit le titre en cours pour le dashboard.
+install -m 0755 "${DEPLOY_DIR}/librespot-event.sh" /usr/local/bin/librespot-event.sh
+
 # --- 4. Environnement Python -------------------------------------------------
 echo "==> Environnement Python"
 if [ ! -d "${APP_DIR}/.venv" ]; then

@@ -28,6 +28,7 @@ from app import app
 from app.config import (
     ALSA_MIXER_CARD,
     ALSA_MIXER_CONTROL,
+    LIBRESPOT_METADATA_FILE,
     LIBRESPOT_SERVICE,
     LIBRESPOT_SYSTEMD_USER,
     LIBRESPOT_USE_SUDO,
@@ -305,6 +306,41 @@ def _get_airplay_remote_snapshot():
 def _get_airplay_metadata_snapshot():
     with _AIRPLAY_METADATA_LOCK:
         return dict(_AIRPLAY_METADATA)
+
+
+# Metadonnees Spotify : ecrites par le hook --onevent de librespot, relues ici.
+# Cache indexe sur la date de modification pour eviter de relire le fichier a
+# chaque requete.
+_SPOTIFY_METADATA_CACHE = {"mtime": None, "data": None}
+
+
+def _get_spotify_metadata_snapshot():
+    empty = {"title": None, "artist": None, "album": None, "updated_at": None}
+
+    try:
+        mtime = os.path.getmtime(LIBRESPOT_METADATA_FILE)
+    except OSError:
+        # Fichier absent : librespot est arrete ou aucune piste n'a ete jouee.
+        _SPOTIFY_METADATA_CACHE["mtime"] = None
+        _SPOTIFY_METADATA_CACHE["data"] = None
+        return empty
+
+    if _SPOTIFY_METADATA_CACHE["mtime"] == mtime and _SPOTIFY_METADATA_CACHE["data"]:
+        return dict(_SPOTIFY_METADATA_CACHE["data"])
+
+    try:
+        with open(LIBRESPOT_METADATA_FILE, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        # Lecture concurrente d'une ecriture, ou fichier corrompu.
+        return dict(_SPOTIFY_METADATA_CACHE["data"] or empty)
+
+    if not isinstance(data, dict):
+        return empty
+
+    _SPOTIFY_METADATA_CACHE["mtime"] = mtime
+    _SPOTIFY_METADATA_CACHE["data"] = data
+    return dict(data)
 
 
 def _is_airplay_metadata_fresh(metadata):
@@ -947,6 +983,8 @@ def _public_state():
     current_artist = track["artist"]
 
     active_service_key = SPEAKER_STATE.get("active_service")
+    spotify_metadata = _get_spotify_metadata_snapshot()
+
     if active_service_key == "airplay":
         metadata = _get_airplay_metadata_snapshot()
         if _is_airplay_metadata_fresh(metadata):
@@ -955,8 +993,14 @@ def _public_state():
         else:
             current_track = "En attente de metadonnees AirPlay"
             current_artist = "Demarre une lecture AirPlay"
+    elif active_service_key == "spotify":
+        if spotify_metadata.get("title"):
+            current_track = spotify_metadata["title"]
+            current_artist = spotify_metadata.get("artist") or "Artiste inconnu"
+        else:
+            current_track = "En attente de metadonnees Spotify"
+            current_artist = "Demarre une lecture Spotify"
 
-    active_service_key = SPEAKER_STATE.get("active_service")
     active_service = SPEAKER_STATE["services"].get(active_service_key) if active_service_key else None
     return {
         **SPEAKER_STATE,
@@ -964,6 +1008,7 @@ def _public_state():
         "current_artist": current_artist,
         "airplay_metadata": _get_airplay_metadata_snapshot(),
         "airplay_remote": _get_airplay_remote_snapshot(),
+        "spotify_metadata": spotify_metadata,
         "active_service_name": active_service["name"] if active_service else "Aucune",
         "updated_since": _updated_since(SPEAKER_STATE["updated_at"]),
     }
