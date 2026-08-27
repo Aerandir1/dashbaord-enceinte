@@ -172,8 +172,22 @@ fi
 echo "==> Activation des services"
 systemctl daemon-reload
 
+# Exclusivite : les deux sources se disputent la carte son et se declarent
+# mutuellement Conflicts=. Les activer toutes les deux au demarrage
+# provoquerait un conflit ; une seule demarre donc au boot, l'autre est lancee
+# a la demande depuis le dashboard.
+DEFAULT_SOURCE="$(read_env DEFAULT_SOURCE spotify)"
+case "$DEFAULT_SOURCE" in
+    airplay) SOURCE_UNIT="shairport-sync"; OTHER_UNIT="librespot" ;;
+    *)       SOURCE_UNIT="librespot";      OTHER_UNIT="shairport-sync" ;;
+esac
+echo "    source au demarrage : ${DEFAULT_SOURCE} (${SOURCE_UNIT})"
+
+systemctl disable "$OTHER_UNIT" >/dev/null 2>&1 || true
+systemctl stop "$OTHER_UNIT" >/dev/null 2>&1 || true
+
 failed=0
-for unit in avahi-daemon shairport-sync librespot dashboard-enceinte; do
+for unit in avahi-daemon "$SOURCE_UNIT" dashboard-enceinte; do
     systemctl enable "$unit" >/dev/null 2>&1 || true
     systemctl restart "$unit" || true
     sleep 1

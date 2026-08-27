@@ -20,47 +20,44 @@
 
     <section class="grid">
       <article class="panel service-panel">
-        <h2>Services audio</h2>
-        <div class="service-list">
-          <button class="service-chip" id="chip-spotify" data-service="spotify" aria-label="Sélectionner Spotify comme source">
-            <div class="service-meta">
-              <img
-                class="service-logo spotify"
-                src="{{ url_for('static', filename='img/Spotify_logo_without_text.svg') }}"
-                alt="Logo Spotify"
-              >
-              <span class="service-name">Spotify</span>
-            </div>
-            <div class="service-actions">
-              <span class="service-status" id="status-spotify">
-                {{ 'En ligne' if state.services['spotify']['online'] else 'Hors ligne' }}
-              </span>
-              <span class="service-active-dot" id="dot-spotify"></span>
-            </div>
+        <h2>Source</h2>
+
+        <div
+          class="source-selector"
+          id="sourceSelector"
+          role="radiogroup"
+          aria-label="Source audio active"
+          data-index="{{ 0 if state.active_service == 'spotify' else 1 if state.active_service == 'airplay' else 2 }}"
+          data-source="{{ state.active_service or 'none' }}"
+        >
+          <span class="source-lamp" aria-hidden="true"></span>
+
+          <button type="button" class="source-option" role="radio" data-source="spotify"
+                  aria-checked="{{ 'true' if state.active_service == 'spotify' else 'false' }}">
+            <img class="source-logo" src="{{ url_for('static', filename='img/Spotify_logo_without_text.svg') }}" alt="">
+            <span>Spotify</span>
           </button>
-          <button class="service-chip" id="chip-airplay" data-service="airplay" aria-label="Sélectionner AirPlay comme source">
-            <div class="service-meta">
-              <img
-                class="service-logo airplay"
-                src="{{ url_for('static', filename='img/AirPlay_Audio_logo.svg') }}"
-                alt="Logo AirPlay"
-              >
-              <span class="service-name">AirPlay</span>
-            </div>
-            <div class="service-actions">
-              <span class="service-status" id="status-airplay">
-                {{ 'En ligne' if state.services['airplay']['online'] else 'Hors ligne' }}
-              </span>
-              <span class="service-active-dot" id="dot-airplay"></span>
-            </div>
+
+          <button type="button" class="source-option" role="radio" data-source="airplay"
+                  aria-checked="{{ 'true' if state.active_service == 'airplay' else 'false' }}">
+            <img class="source-logo" src="{{ url_for('static', filename='img/AirPlay_Audio_logo.svg') }}" alt="">
+            <span>AirPlay</span>
+          </button>
+
+          <button type="button" class="source-option" role="radio" data-source="none"
+                  aria-checked="{{ 'false' if state.active_service else 'true' }}">
+            <span class="source-off-mark" aria-hidden="true"></span>
+            <span>Aucune</span>
           </button>
         </div>
 
-        <div class="controls source-actions">
-          <button class="btn ghost" id="toggleSpotify">On/Off Spotify</button>
-          <button class="btn ghost" id="toggleAirplay">On/Off AirPlay</button>
-        </div>
-        <p>Source active : <strong id="activeService">{{ state.active_service_name }}</strong></p>
+        <p class="source-hint" id="sourceHint">
+          {%- if state.active_service -%}
+            {{ state.active_service_name }} est la seule source active.
+          {%- else -%}
+            Aucune source active. Choisis une entrée pour l'allumer.
+          {%- endif -%}
+        </p>
       </article>
 
       <article class="panel">

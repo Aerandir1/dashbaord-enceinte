@@ -1,3 +1,6 @@
+// Ordre des entrées dans le sélecteur : il pilote la position du témoin.
+const SOURCE_ORDER = ['spotify', 'airplay', 'none'];
+
 async function callApi(url, payload) {
   const response = await fetch(url, {
     method: 'POST',
@@ -94,8 +97,6 @@ function render(state) {
   if (!state) return;
 
   const services = state.services || {};
-  const librespotifyOnline = Boolean(services.spotify?.online);
-  const airplayOnline = Boolean(services.airplay?.online);
 
   document.getElementById('deviceLine').textContent = `${state.device_name} · ${state.room}`;
   document.getElementById('trackName').textContent = state.current_track;
@@ -137,49 +138,30 @@ function render(state) {
 
   document.getElementById('updatedAt').textContent = state.updated_since || state.updated_at;
 
-  const librespotifyStatus = document.getElementById('status-spotify');
-  const airplayStatus = document.getElementById('status-airplay');
-  const librespotifyChip = document.getElementById('chip-spotify');
-  const airplayChip = document.getElementById('chip-airplay');
-  const activeService = document.getElementById('activeService');
+  // ── Sélecteur de source ──
+  // Une seule source peut être active : la sélection est directement l'état
+  // réel renvoyé par le serveur, jamais un état d'interface parallèle.
+  const activeSource = state.active_service || 'none';
+  const selector = document.getElementById('sourceSelector');
+  if (selector) {
+    selector.dataset.source = activeSource;
+    selector.dataset.index = SOURCE_ORDER.indexOf(activeSource);
+    selector.querySelectorAll('.source-option').forEach((option) => {
+      option.setAttribute('aria-checked', String(option.dataset.source === activeSource));
+    });
+  }
+
+  const sourceHint = document.getElementById('sourceHint');
+  if (sourceHint) {
+    sourceHint.textContent = state.active_service
+      ? `${state.active_service_name} est la seule source active.`
+      : "Aucune source active. Choisis une entrée pour l'allumer.";
+  }
+
   const playbackSource = document.getElementById('playbackSource');
-
-  if (librespotifyStatus) librespotifyStatus.textContent = librespotifyOnline ? 'En ligne' : 'Hors ligne';
-  if (airplayStatus) airplayStatus.textContent = airplayOnline ? 'En ligne' : 'Hors ligne';
-
-  if (librespotifyChip) {
-    librespotifyChip.classList.toggle('online', librespotifyOnline);
-    librespotifyChip.classList.toggle('offline', !librespotifyOnline);
-    librespotifyChip.classList.toggle('active', state.active_service === 'spotify');
-  }
-
-  if (airplayChip) {
-    airplayChip.classList.toggle('online', airplayOnline);
-    airplayChip.classList.toggle('offline', !airplayOnline);
-    airplayChip.classList.toggle('active', state.active_service === 'airplay');
-  }
-
-  if (activeService) {
-    activeService.textContent =
-      state.active_service_name || services[state.active_service]?.name || 'Aucune';
-  }
-
   if (playbackSource) {
     playbackSource.textContent =
       state.active_service_name || services[state.active_service]?.name || 'Aucune';
-  }
-
-  const toggleLibrespotify = document.getElementById('toggleSpotify');
-  const toggleAirplay = document.getElementById('toggleAirplay');
-  if (toggleLibrespotify) {
-    toggleLibrespotify.textContent = librespotifyOnline
-      ? 'Couper Spotify'
-      : 'Activer Spotify';
-  }
-  if (toggleAirplay) {
-    toggleAirplay.textContent = airplayOnline
-      ? 'Couper AirPlay'
-      : 'Activer AirPlay';
   }
 
   const hasPlayableSource = Boolean(state.active_service) && Boolean(services[state.active_service]?.online);
@@ -280,25 +262,50 @@ document.getElementById('themeToggle').addEventListener('dblclick', (e) => {
   applyTheme(preferLight ? 'light' : 'dark', true);
 });
 
-document.getElementById('chip-spotify').addEventListener('click', async () => {
-  const state = await callApi('/api/services', { service: 'spotify', action: 'select' });
-  render(state);
-});
+// ── Sélection de la source ──
+// Choisir une source démarre son service et arrête l'autre côté serveur.
+// L'opération prend une seconde ou deux : on l'indique au lieu de laisser
+// croire que le clic n'a rien fait.
+const sourceSelector = document.getElementById('sourceSelector');
 
-document.getElementById('chip-airplay').addEventListener('click', async () => {
-  const state = await callApi('/api/services', { service: 'airplay', action: 'select' });
-  render(state);
-});
+async function selectSource(source) {
+  if (!sourceSelector || sourceSelector.classList.contains('is-busy')) return;
+  if (source === (sourceSelector.dataset.source || 'none')) return;
 
-document.getElementById('toggleSpotify').addEventListener('click', async () => {
-  const state = await callApi('/api/services', { service: 'spotify', action: 'toggle' });
-  render(state);
-});
+  // Le témoin part immédiatement vers la cible : le retour est instantané,
+  // même si le service met un moment à démarrer.
+  sourceSelector.classList.add('is-busy');
+  sourceSelector.dataset.source = source;
+  sourceSelector.dataset.index = SOURCE_ORDER.indexOf(source);
 
-document.getElementById('toggleAirplay').addEventListener('click', async () => {
-  const state = await callApi('/api/services', { service: 'airplay', action: 'toggle' });
-  render(state);
-});
+  try {
+    const state = await callApi('/api/source', { source });
+    if (state) render(state);
+    else await fetchState().then((s) => s && render(s));
+  } finally {
+    sourceSelector.classList.remove('is-busy');
+  }
+}
+
+if (sourceSelector) {
+  sourceSelector.querySelectorAll('.source-option').forEach((option) => {
+    option.addEventListener('click', () => selectSource(option.dataset.source));
+  });
+
+  // Flèches gauche/droite entre les entrées, comme un groupe de boutons radio.
+  sourceSelector.addEventListener('keydown', (event) => {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const current = SOURCE_ORDER.indexOf(sourceSelector.dataset.source || 'none');
+    const next = (current + step + SOURCE_ORDER.length) % SOURCE_ORDER.length;
+    const target = sourceSelector.querySelector(`[data-source="${SOURCE_ORDER[next]}"]`);
+    if (target) {
+      target.focus();
+      selectSource(SOURCE_ORDER[next]);
+    }
+  });
+}
 
 initTheme();
 

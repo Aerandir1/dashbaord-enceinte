@@ -1130,13 +1130,41 @@ def _sync_service_states(force=False):
             online, _error = _get_service_status(service)
         SPEAKER_STATE["services"][service]["online"] = online
 
-    active_service_key = SPEAKER_STATE.get("active_service")
-    if active_service_key and not SPEAKER_STATE["services"][active_service_key]["online"]:
-        fallback = next(
-            (key for key, value in SPEAKER_STATE["services"].items() if value["online"]),
-            None,
-        )
-        SPEAKER_STATE["active_service"] = fallback
+    # Une seule source peut tourner a la fois (exclusivite garantie par
+    # systemd via Conflicts=, et reappliquee par _set_active_source). La source
+    # active n'est donc pas un etat separe : c'est celle qui tourne reellement.
+    running = [key for key, value in SPEAKER_STATE["services"].items() if value["online"]]
+    SPEAKER_STATE["active_service"] = running[0] if running else None
+
+
+def _set_active_source(source):
+    """Rend une seule source active, en arretant systematiquement l'autre.
+
+    L'exclusivite est indispensable : les deux services se disputent la carte
+    son. Elle est declaree a systemd (Conflicts=), mais on l'applique aussi
+    ici pour rester correct meme si les unites n'ont pas ete reinstallees.
+    """
+    # Arreter les autres sources D'ABORD : elles liberent ainsi la carte son
+    # avant que la nouvelle ne tente de l'ouvrir.
+    for key in SERVICE_BACKENDS:
+        if key == source:
+            continue
+        if not SPEAKER_STATE["services"][key]["online"]:
+            continue
+        ok, error = _set_service_online(key, False)
+        if not ok:
+            return False, error
+        if key == "airplay":
+            _clear_airplay_metadata()
+            _clear_airplay_remote()
+
+    if source is not None:
+        ok, error = _set_service_online(source, True)
+        if not ok:
+            return False, error
+
+    _sync_service_states(force=True)
+    return True, None
 
 
 def _touch_state():
@@ -1396,47 +1424,21 @@ def api_eq():
     return jsonify(_public_state())
 
 
-@app.route("/api/services", methods=["POST"])
-def api_services():
+@app.route("/api/source", methods=["POST"])
+def api_source():
+    """Selectionne LA source active. Choisir une source demarre son service et
+    arrete l'autre : les deux ne peuvent jamais tourner en meme temps."""
     payload = request.json or {}
-    service = payload.get("service")
+    source = payload.get("source")
 
-    if service not in SPEAKER_STATE["services"]:
-        return jsonify({"error": "Service inconnu"}), 400
+    if source in ("", "none", "aucune", None):
+        source = None
+    elif source not in SPEAKER_STATE["services"]:
+        return jsonify({"error": "Source inconnue"}), 400
 
-    action = payload.get("action")
-    desired_online = None
-    if "online" in payload:
-        desired_online = bool(payload["online"])
-    elif action == "toggle":
-        # Basculer exige l'état réel, pas une valeur potentiellement périmée.
-        _sync_service_states(force=True)
-        desired_online = not SPEAKER_STATE["services"][service]["online"]
-
-    if desired_online is not None:
-        if service in SERVICE_BACKENDS:
-            ok, error = _set_service_online(service, desired_online)
-            if not ok:
-                return jsonify({"error": error}), 400
-
-            if service == "airplay" and not desired_online:
-                _clear_airplay_metadata()
-                _clear_airplay_remote()
-                SPEAKER_STATE["is_playing"] = False
-                if SPEAKER_STATE.get("active_service") == "airplay":
-                    SPEAKER_STATE["active_service"] = None
-
-            _sync_service_states(force=True)
-        else:
-            SPEAKER_STATE["services"][service]["online"] = desired_online
-
-    if payload.get("select") or action == "select":
-        _sync_service_states(force=True)
-        if not SPEAKER_STATE["services"][service]["online"]:
-            return jsonify({"error": "Service hors ligne"}), 400
-        SPEAKER_STATE["active_service"] = service
-
-    _sync_service_states(force=True)
+    ok, error = _set_active_source(source)
+    if not ok:
+        return jsonify({"error": error}), 400
 
     _touch_state()
     return jsonify(_public_state())
