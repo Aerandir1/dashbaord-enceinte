@@ -15,9 +15,6 @@
       </div>
       <div class="header-actions">
         <button id="themeToggle" class="btn ghost" aria-label="Activer le thème clair">🌙 Nuit</button>
-        <button id="powerBtn" class="btn {{ 'on' if state.power else 'off' }}">
-          {{ 'Éteindre' if state.power else 'Allumer' }}
-        </button>
       </div>
     </header>
 
@@ -134,16 +131,50 @@
       <article class="panel">
         <h2>État</h2>
         <ul class="stats">
-          <li><span>Batterie</span> <strong id="battery">{{ state.battery }}%</strong></li>
           <li>
             <span>Wi‑Fi</span>
-            <strong id="wifi" class="wifi-indicator" aria-label="Signal Wi-Fi {{ state.wifi_strength }} sur 5">
-              {% for i in range(1, 6) %}
-                <span class="wifi-bar {{ 'active' if i <= state.wifi_strength else '' }}"></span>
-              {% endfor %}
+            <strong id="wifiSsid">{{ state.wifi.ssid or 'Non connecté' }}</strong>
+          </li>
+          <li>
+            <span>Signal</span>
+            <strong class="signal-cell">
+              <span id="wifiSignal">
+                {%- if state.wifi.signal_dbm is not none -%}
+                  {{ state.wifi.signal_dbm }} dBm
+                {%- else -%}—{%- endif -%}
+              </span>
+              <span id="wifiBars" class="wifi-indicator" aria-label="Signal {{ state.wifi.bars }} sur 5">
+                {% for i in range(1, 6) %}
+                  <span class="wifi-bar {{ 'active' if i <= state.wifi.bars else '' }}"></span>
+                {% endfor %}
+              </span>
             </strong>
           </li>
-          <li><span>Firmware</span> <strong id="firmware">{{ state.firmware }}</strong></li>
+          <li><span>Sortie</span> <strong id="audioOutput">{{ state.audio_output }}</strong></li>
+          <li>
+            <span>Format</span>
+            <strong id="audioFormat">
+              {%- if state.audio_stream.playing -%}
+                {{ '%.1f'|format(state.audio_stream.rate / 1000) }} kHz ·
+                {{ state.audio_stream.bits }} bits ·
+                {{ 'stéréo' if state.audio_stream.channels == 2 else state.audio_stream.channels ~ ' ch' }}
+              {%- else -%}Au repos{%- endif -%}
+            </strong>
+          </li>
+          <li>
+            <span>Température</span>
+            <strong id="cpuTemp">
+              {%- if state.system.temperature_c is not none -%}
+                {{ state.system.temperature_c }} °C
+              {%- else -%}—{%- endif -%}
+            </strong>
+          </li>
+          <li>
+            <span>Alimentation</span>
+            <strong id="powerHealth" class="{{ 'health-ok' if state.system.power_ok else 'health-warn' if state.system.power_ok is not none }}">
+              {{ state.system.power_label }}
+            </strong>
+          </li>
           <li><span>Dernière mise à jour</span> <strong id="updatedAt">{{ state.updated_since }}</strong></li>
         </ul>
       </article>

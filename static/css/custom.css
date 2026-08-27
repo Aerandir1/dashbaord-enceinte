@@ -425,3 +425,18 @@ input[type="range"] {
   }
 
 }
+
+/* ── Box État : indicateurs de données réelles ─────────── */
+.signal-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.health-ok {
+  color: var(--success, #16a34a);
+}
+
+.health-warn {
+  color: var(--danger);
+}

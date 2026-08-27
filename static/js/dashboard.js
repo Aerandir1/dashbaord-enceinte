@@ -102,14 +102,39 @@ function render(state) {
   document.getElementById('artistName').textContent = state.current_artist;
   document.getElementById('volumeValue').textContent = state.volume;
   document.getElementById('volumeSlider').value = state.volume;
-  document.getElementById('battery').textContent = `${state.battery}%`;
-  const wifiStrength = Number(state.wifi_strength) || 0;
-  const wifiIndicator = document.getElementById('wifi');
-  wifiIndicator.setAttribute('aria-label', `Signal Wi-Fi ${wifiStrength} sur 5`);
+  // ── Wi-Fi (donnees reelles : /proc/net/wireless + nmcli) ──
+  const wifi = state.wifi || {};
+  document.getElementById('wifiSsid').textContent = wifi.ssid || 'Non connecté';
+  document.getElementById('wifiSignal').textContent =
+    wifi.signal_dbm === null || wifi.signal_dbm === undefined ? '—' : `${wifi.signal_dbm} dBm`;
+
+  const bars = Number(wifi.bars) || 0;
+  const wifiIndicator = document.getElementById('wifiBars');
+  wifiIndicator.setAttribute('aria-label', `Signal ${bars} sur 5`);
   wifiIndicator.querySelectorAll('.wifi-bar').forEach((bar, index) => {
-    bar.classList.toggle('active', index < wifiStrength);
+    bar.classList.toggle('active', index < bars);
   });
-  document.getElementById('firmware').textContent = state.firmware;
+
+  // ── Audio (format reellement joue, lu dans /proc/asound) ──
+  document.getElementById('audioOutput').textContent = state.audio_output || '—';
+  const stream = state.audio_stream || {};
+  document.getElementById('audioFormat').textContent = stream.playing
+    ? `${(stream.rate / 1000).toFixed(1)} kHz · ${stream.bits} bits · ` +
+      (stream.channels === 2 ? 'stéréo' : `${stream.channels} ch`)
+    : 'Au repos';
+
+  // ── Sante systeme ──
+  const system = state.system || {};
+  document.getElementById('cpuTemp').textContent =
+    system.temperature_c === null || system.temperature_c === undefined
+      ? '—'
+      : `${system.temperature_c} °C`;
+
+  const powerHealth = document.getElementById('powerHealth');
+  powerHealth.textContent = system.power_label || '—';
+  powerHealth.classList.toggle('health-ok', system.power_ok === true);
+  powerHealth.classList.toggle('health-warn', system.power_ok === false);
+
   document.getElementById('updatedAt').textContent = state.updated_since || state.updated_at;
 
   const librespotifyStatus = document.getElementById('status-spotify');
@@ -159,13 +184,8 @@ function render(state) {
 
   const hasPlayableSource = Boolean(state.active_service) && Boolean(services[state.active_service]?.online);
   document.querySelectorAll('[data-playback]').forEach((button) => {
-    button.disabled = !hasPlayableSource || !state.power;
+    button.disabled = !hasPlayableSource;
   });
-
-  const powerBtn = document.getElementById('powerBtn');
-  powerBtn.textContent = state.power ? 'Éteindre' : 'Allumer';
-  powerBtn.classList.toggle('on', state.power);
-  powerBtn.classList.toggle('off', !state.power);
 
   const playBtn = document.getElementById('playBtn');
   playBtn.textContent = state.is_playing ? '⏸' : '▶';
@@ -195,11 +215,6 @@ function render(state) {
     if (label) label.textContent = `${value} dB`;
   });
 }
-
-document.getElementById('powerBtn').addEventListener('click', async () => {
-  const state = await callApi('/api/power', { action: 'toggle' });
-  render(state);
-});
 
 document.querySelectorAll('[data-playback]').forEach((button) => {
   button.addEventListener('click', async () => {

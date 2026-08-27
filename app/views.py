@@ -42,12 +42,6 @@ from app.config import (
 )
 
 
-PLAYLIST = [
-    {"title": "Morning Vibes", "artist": "Lina Gray"},
-    {"title": "Deep Focus", "artist": "Neon Coast"},
-    {"title": "Night Drive", "artist": "Polar Echo"},
-]
-
 EQ_PRESETS = {
     "flat": {"60Hz": 0, "230Hz": 0, "910Hz": 0, "3.6kHz": 0, "14kHz": 0},
     "bass_boost": {"60Hz": 6, "230Hz": 3, "910Hz": 0, "3.6kHz": -1, "14kHz": -2},
@@ -58,14 +52,9 @@ EQ_PRESETS = {
 SPEAKER_STATE = {
     "device_name": "Enceinte Salon",
     "room": "Salon",
-    "power": True,
-    "is_playing": True,
+    "is_playing": False,
     "volume": 42,
     "muted": False,
-    "battery": 78,
-    "wifi_strength": 4,
-    "firmware": "v1.0.0",
-    "track_index": 0,
     "services": {
         "spotify": {"name": "Spotify", "online": True},
         "airplay": {"name": "AirPlay", "online": True},
@@ -799,6 +788,222 @@ def _sync_system_volume_state(force=False):
         SPEAKER_STATE["muted"] = muted
 
 
+# ── Donnees systeme reelles (reseau, audio, sante) ──────────────────────────
+# Tout ce qui est lisible dans /proc ou /sys l'est directement : c'est
+# quasi gratuit. Les rares commandes externes (nmcli, vcgencmd) sont mises en
+# cache longuement, un dashboard qui relance des sous-processus en boucle
+# ayant deja provoque des coupures audio par contention CPU.
+
+_WIFI_SSID_CACHE = {"at": 0.0, "value": None}
+_THROTTLED_CACHE = {"at": 0.0, "value": None}
+_DAC_NAME_CACHE = [None]
+
+_SSID_CACHE_TTL_SECONDS = 60.0
+_THROTTLED_CACHE_TTL_SECONDS = 30.0
+
+
+def _signal_bars(dbm):
+    """Convertit une puissance en dBm en 1..5 barres (0 si inconnue)."""
+    if dbm is None:
+        return 0
+    if dbm >= -50:
+        return 5
+    if dbm >= -60:
+        return 4
+    if dbm >= -67:
+        return 3
+    if dbm >= -75:
+        return 2
+    return 1
+
+
+def _read_wifi_signal():
+    """Interface et puissance du signal, lues dans /proc/net/wireless."""
+    try:
+        with open("/proc/net/wireless", "r", encoding="utf-8") as handle:
+            lines = handle.readlines()
+    except OSError:
+        return None, None
+
+    # Les deux premieres lignes sont des en-tetes.
+    for line in lines[2:]:
+        if ":" not in line:
+            continue
+        interface, _, rest = line.partition(":")
+        fields = rest.split()
+        if len(fields) < 3:
+            continue
+        try:
+            # "-31." -> -31
+            level = int(float(fields[2].rstrip(".")))
+        except ValueError:
+            continue
+        return interface.strip(), level
+
+    return None, None
+
+
+def _read_wifi_ssid():
+    now = time.monotonic()
+    if (now - _WIFI_SSID_CACHE["at"]) < _SSID_CACHE_TTL_SECONDS:
+        return _WIFI_SSID_CACHE["value"]
+
+    _WIFI_SSID_CACHE["at"] = now
+    ssid = None
+
+    if shutil.which("iwgetid"):
+        ok, stdout, _stderr = _run_command(["iwgetid", "-r"])
+        if ok and stdout:
+            ssid = stdout.strip()
+
+    if not ssid and shutil.which("nmcli"):
+        ok, stdout, _stderr = _run_command(
+            ["nmcli", "-t", "-f", "ACTIVE,SSID", "device", "wifi"]
+        )
+        if ok:
+            for line in stdout.splitlines():
+                active, _, name = line.partition(":")
+                if active.strip().lower() in {"yes", "oui"} and name.strip():
+                    ssid = name.strip()
+                    break
+
+    _WIFI_SSID_CACHE["value"] = ssid
+    return ssid
+
+
+def _get_wifi_info():
+    interface, dbm = _read_wifi_signal()
+    return {
+        "connected": dbm is not None,
+        "interface": interface,
+        "ssid": _read_wifi_ssid() if dbm is not None else None,
+        "signal_dbm": dbm,
+        "bars": _signal_bars(dbm),
+    }
+
+
+def _get_dac_name():
+    """Nom de la carte son, lu une fois dans /proc/asound/cards."""
+    if _DAC_NAME_CACHE[0] is not None:
+        return _DAC_NAME_CACHE[0]
+
+    card = str(ALSA_MIXER_CARD or "0")
+    name = None
+    try:
+        with open("/proc/asound/cards", "r", encoding="utf-8") as handle:
+            for line in handle:
+                # Format : " 0 [sndrpihifiberry]: HifiberryDacp - snd_rpi_..."
+                stripped = line.strip()
+                if not stripped.startswith(card + " "):
+                    continue
+                _, _, after = stripped.partition("]:")
+                label = after.strip()
+                if label:
+                    name = label.split(" - ")[0].strip() or label
+                break
+    except OSError:
+        pass
+
+    _DAC_NAME_CACHE[0] = name or "Inconnue"
+    return _DAC_NAME_CACHE[0]
+
+
+def _get_audio_stream_info():
+    """Format reellement joue, lu dans /proc/asound (vide si silencieux)."""
+    card = ALSA_MIXER_CARD or "0"
+    path = f"/proc/asound/card{card}/pcm0p/sub0/hw_params"
+
+    info = {"playing": False, "rate": None, "bits": None, "channels": None}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            content = handle.read()
+    except OSError:
+        return info
+
+    if "closed" in content:
+        return info
+
+    for line in content.splitlines():
+        key, _, value = line.partition(":")
+        key = key.strip()
+        value = value.strip()
+        if key == "rate":
+            try:
+                info["rate"] = int(value.split()[0])
+            except (ValueError, IndexError):
+                pass
+        elif key == "channels":
+            try:
+                info["channels"] = int(value)
+            except ValueError:
+                pass
+        elif key == "format":
+            # "S16_LE" -> 16 bits, "S24_3LE" -> 24 bits
+            digits = "".join(c for c in value if c.isdigit())
+            if digits:
+                try:
+                    info["bits"] = int(digits[:2])
+                except ValueError:
+                    pass
+
+    info["playing"] = info["rate"] is not None
+    return info
+
+
+def _read_throttled_state():
+    now = time.monotonic()
+    if (now - _THROTTLED_CACHE["at"]) < _THROTTLED_CACHE_TTL_SECONDS:
+        return _THROTTLED_CACHE["value"]
+
+    _THROTTLED_CACHE["at"] = now
+    value = None
+
+    if shutil.which("vcgencmd"):
+        ok, stdout, _stderr = _run_command(["vcgencmd", "get_throttled"])
+        if ok and "=" in stdout:
+            try:
+                value = int(stdout.split("=", 1)[1].strip(), 16)
+            except ValueError:
+                value = None
+
+    _THROTTLED_CACHE["value"] = value
+    return value
+
+
+def _get_system_health():
+    temperature = None
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp", "r", encoding="utf-8") as handle:
+            temperature = round(int(handle.read().strip()) / 1000.0, 1)
+    except (OSError, ValueError):
+        pass
+
+    throttled = _read_throttled_state()
+    power_ok = None
+    power_label = "Indisponible"
+
+    if throttled is not None:
+        # Bit 0 : sous-tension en cours. Bit 16 : sous-tension survenue depuis
+        # le demarrage. Bits 1/2 : frequence bridee / throttling en cours.
+        if throttled == 0:
+            power_ok, power_label = True, "OK"
+        elif throttled & 0x1:
+            power_ok, power_label = False, "Sous-tension"
+        elif throttled & 0x4:
+            power_ok, power_label = False, "Throttling thermique"
+        elif throttled & 0x10000:
+            power_ok, power_label = True, "OK (sous-tension passee)"
+        else:
+            power_ok, power_label = True, "OK (incident passe)"
+
+    return {
+        "temperature_c": temperature,
+        "throttled_raw": None if throttled is None else f"0x{throttled:X}",
+        "power_ok": power_ok,
+        "power_label": power_label,
+    }
+
+
 def _get_service_backend(service):
     return SERVICE_BACKENDS.get(service)
 
@@ -978,9 +1183,10 @@ def _public_state():
     _sync_service_states()
     _sync_system_volume_state()
 
-    track = PLAYLIST[SPEAKER_STATE["track_index"]]
-    current_track = track["title"]
-    current_artist = track["artist"]
+    # Aucune donnee inventee : sans metadonnees d'une source reelle, on
+    # l'affiche explicitement plutot que d'afficher une piste fictive.
+    current_track = "Aucune lecture"
+    current_artist = "—"
 
     active_service_key = SPEAKER_STATE.get("active_service")
     spotify_metadata = _get_spotify_metadata_snapshot()
@@ -1001,6 +1207,11 @@ def _public_state():
             current_track = "En attente de metadonnees Spotify"
             current_artist = "Demarre une lecture Spotify"
 
+    audio_stream = _get_audio_stream_info()
+    # L'etat de lecture reel : c'est le materiel qui fait foi, pas un booleen
+    # que l'interface aurait bascule de son cote.
+    SPEAKER_STATE["is_playing"] = audio_stream["playing"]
+
     active_service = SPEAKER_STATE["services"].get(active_service_key) if active_service_key else None
     return {
         **SPEAKER_STATE,
@@ -1009,6 +1220,10 @@ def _public_state():
         "airplay_metadata": _get_airplay_metadata_snapshot(),
         "airplay_remote": _get_airplay_remote_snapshot(),
         "spotify_metadata": spotify_metadata,
+        "wifi": _get_wifi_info(),
+        "audio_output": _get_dac_name(),
+        "audio_stream": audio_stream,
+        "system": _get_system_health(),
         "active_service_name": active_service["name"] if active_service else "Aucune",
         "updated_since": _updated_since(SPEAKER_STATE["updated_at"]),
     }
@@ -1088,28 +1303,9 @@ def api_stream():
     return Response(stream_with_context(event_stream()), headers=headers, mimetype="text/event-stream")
 
 
-@app.route("/api/power", methods=["POST"])
-def api_power():
-    action = (request.json or {}).get("action", "toggle")
-    if action == "on":
-        SPEAKER_STATE["power"] = True
-    elif action == "off":
-        SPEAKER_STATE["power"] = False
-        SPEAKER_STATE["is_playing"] = False
-    else:
-        SPEAKER_STATE["power"] = not SPEAKER_STATE["power"]
-        if not SPEAKER_STATE["power"]:
-            SPEAKER_STATE["is_playing"] = False
-    _touch_state()
-    return jsonify(_public_state())
-
-
 @app.route("/api/playback", methods=["POST"])
 def api_playback():
     action = (request.json or {}).get("action", "toggle")
-
-    if not SPEAKER_STATE["power"]:
-        return jsonify({"error": "Enceinte éteinte"}), 400
 
     active_service_key = SPEAKER_STATE.get("active_service")
     if not active_service_key:
@@ -1121,23 +1317,21 @@ def api_playback():
     action = action if action in {"play", "pause", "next", "previous", "toggle"} else "toggle"
 
     if active_service_key == "airplay":
+        # Commande reellement transmise a l'emetteur via DACP.
         ok, error = _send_airplay_playback_command(action)
         if not ok:
             return jsonify({"error": error}), 400
-
-    if action == "play":
-        SPEAKER_STATE["is_playing"] = True
-    elif action == "pause":
-        SPEAKER_STATE["is_playing"] = False
-    elif action == "next":
-        SPEAKER_STATE["track_index"] = (SPEAKER_STATE["track_index"] + 1) % len(PLAYLIST)
-        SPEAKER_STATE["is_playing"] = True
-    elif action == "previous":
-        SPEAKER_STATE["track_index"] = (SPEAKER_STATE["track_index"] - 1) % len(PLAYLIST)
-        SPEAKER_STATE["is_playing"] = True
     else:
-        SPEAKER_STATE["is_playing"] = not SPEAKER_STATE["is_playing"]
+        # librespot ne se pilote pas depuis l'enceinte : c'est le client
+        # Spotify qui controle la lecture. Autant le dire plutot que de faire
+        # semblant en basculant un booleen local.
+        return (
+            jsonify({"error": "Le contrôle de lecture Spotify se fait depuis l'application Spotify."}),
+            400,
+        )
 
+    # is_playing n'est plus force ici : il est deduit de l'etat reel de la
+    # carte son dans _public_state().
     _touch_state()
     return jsonify(_public_state())
 
