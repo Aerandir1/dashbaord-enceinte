@@ -178,12 +178,20 @@ fi
 /usr/local/bin/camilladsp --version
 
 install -d /etc/camilladsp
-# La configuration n'est ecrasee que si elle n'existe pas : le dashboard y
-# ecrit les filtres, on ne veut pas perdre l'egaliseur regle par l'utilisateur.
-if [ ! -f /etc/camilladsp/config.yml ]; then
-    sed -e "s|@CARD_INDEX@|${CARD_INDEX}|g" "${DEPLOY_DIR}/camilladsp.yml" \
-        > /etc/camilladsp/config.yml
+# La configuration existante est conservee : le dashboard y ecrit les filtres,
+# on ne veut pas effacer l'egaliseur regle par l'utilisateur. Mais une config
+# invalide empeche CamillaDSP de demarrer et survivrait a toute reinstallation,
+# donc on la remplace apres l'avoir sauvegardee.
+CAMILLA_CONF=/etc/camilladsp/config.yml
+if [ -f "$CAMILLA_CONF" ] && ! /usr/local/bin/camilladsp -c "$CAMILLA_CONF" >/dev/null 2>&1; then
+    echo "    configuration existante invalide -> sauvegardee en config.yml.bak"
+    mv -f "$CAMILLA_CONF" "${CAMILLA_CONF}.bak"
 fi
+if [ ! -f "$CAMILLA_CONF" ]; then
+    sed -e "s|@CARD_INDEX@|${CARD_INDEX}|g" "${DEPLOY_DIR}/camilladsp.yml" > "$CAMILLA_CONF"
+fi
+# Refuse d'aller plus loin avec une configuration que CamillaDSP rejette.
+/usr/local/bin/camilladsp -c "$CAMILLA_CONF" >/dev/null
 chown -R "$RUN_USER" /etc/camilladsp
 install -m 0644 /dev/null /var/log/camilladsp.log
 chown "$RUN_USER" /var/log/camilladsp.log

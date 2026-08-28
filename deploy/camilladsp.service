@@ -5,6 +5,11 @@ After=sound.target
 # CamillaDSP est le seul a ecrire sur le DAC : il doit tourner en permanence,
 # independamment de la source active.
 
+# StartLimit* appartient a [Unit] : place dans [Service], systemd l'ignore et
+# un service en echec redemarre indefiniment.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
 [Service]
 Type=simple
 User=@RUN_USER@
@@ -32,8 +37,6 @@ LimitMEMLOCK=infinity
 # un always combine a des arrets propres provoque des boucles de redemarrage.
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=60
-StartLimitBurst=5
 
 [Install]
 WantedBy=multi-user.target
