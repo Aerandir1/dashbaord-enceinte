@@ -18,6 +18,12 @@ LIBRESPOT_SYSTEMD_USER = _get_bool_env("LIBRESPOT_SYSTEMD_USER", "true")
 LIBRESPOT_USE_SUDO = _get_bool_env("LIBRESPOT_USE_SUDO")
 SHAIRPORT_METADATA_PIPE = os.getenv("SHAIRPORT_METADATA_PIPE", "/tmp/shairport-sync-metadata")
 
+# Egaliseur : CamillaDSP expose un WebSocket de pilotage sur la machine.
+CAMILLADSP_WS_URL = os.getenv("CAMILLADSP_WS_URL", "ws://127.0.0.1:1234")
+CAMILLADSP_CONFIG_FILE = os.getenv("CAMILLADSP_CONFIG_FILE", "/etc/camilladsp/config.yml")
+# Bandes reglees par l'utilisateur, rechargees au demarrage du dashboard.
+EQ_STATE_FILE = os.getenv("EQ_STATE_FILE", "/etc/camilladsp/eq-state.json")
+
 # Metadonnees Spotify, ecrites par le hook --onevent de librespot
 # (deploy/librespot-event.sh).
 LIBRESPOT_METADATA_FILE = os.getenv(

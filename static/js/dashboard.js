@@ -178,27 +178,6 @@ function render(state) {
   playBtn.setAttribute('title', state.is_playing ? 'Pause' : 'Lecture');
   document.getElementById('muteBtn').textContent = state.muted ? 'Activer le son' : 'Muet';
 
-  const eqPreset = document.getElementById('eqPreset');
-  if (state.eq_preset && eqPreset) {
-    eqPreset.value = state.eq_preset;
-  }
-
-  const eqBands = state.eq_bands || {};
-  const eqIds = {
-    '60Hz': 'eq60',
-    '230Hz': 'eq230',
-    '910Hz': 'eq910',
-    '3.6kHz': 'eq3600',
-    '14kHz': 'eq14000'
-  };
-
-  Object.entries(eqIds).forEach(([band, id]) => {
-    const slider = document.getElementById(id);
-    const value = eqBands[band] ?? 0;
-    if (slider) slider.value = value;
-    const label = document.getElementById(`${id}Value`);
-    if (label) label.textContent = `${value} dB`;
-  });
 }
 
 document.querySelectorAll('[data-playback]').forEach((button) => {
@@ -228,27 +207,6 @@ document.getElementById('muteBtn').addEventListener('click', async () => {
   const mute = currentText === 'Muet';
   const state = await callApi('/api/volume', { mute });
   render(state);
-});
-
-document.getElementById('eqPreset').addEventListener('change', async (event) => {
-  if (event.target.value === 'custom') return;
-  const state = await callApi('/api/eq', { preset: event.target.value });
-  render(state);
-});
-
-document.querySelectorAll('.eq-slider').forEach((slider) => {
-  slider.addEventListener('input', () => {
-    const label = document.getElementById(`${slider.id}Value`);
-    if (label) label.textContent = `${slider.value} dB`;
-  });
-
-  slider.addEventListener('change', async () => {
-    const state = await callApi('/api/eq', {
-      band: slider.dataset.band,
-      gain: Number(slider.value)
-    });
-    render(state);
-  });
 });
 
 document.getElementById('themeToggle').addEventListener('click', () => {

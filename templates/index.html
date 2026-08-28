@@ -102,43 +102,11 @@
       </article>
 
       <article class="panel eq-panel">
-        <h2>Égaliseur (EQ)</h2>
-        <label class="field-label" for="eqPreset">Preset</label>
-        <select id="eqPreset" class="select">
-          <option value="flat" {{ 'selected' if state.eq_preset == 'flat' else '' }}>Flat</option>
-          <option value="bass_boost" {{ 'selected' if state.eq_preset == 'bass_boost' else '' }}>Bass Boost</option>
-          <option value="vocal" {{ 'selected' if state.eq_preset == 'vocal' else '' }}>Vocal</option>
-          <option value="treble_boost" {{ 'selected' if state.eq_preset == 'treble_boost' else '' }}>Treble Boost</option>
-          <option value="custom" {{ 'selected' if state.eq_preset == 'custom' else '' }}>Custom</option>
-        </select>
-
-        <div class="eq-grid eq-vertical">
-          <div class="eq-band vertical">
-            <label for="eq60">60Hz</label>
-            <input id="eq60" class="eq-slider vertical" type="range" min="-12" max="12" value="{{ state.eq_bands['60Hz'] }}" data-band="60Hz">
-            <span id="eq60Value">{{ state.eq_bands['60Hz'] }} dB</span>
-          </div>
-          <div class="eq-band vertical">
-            <label for="eq230">230Hz</label>
-            <input id="eq230" class="eq-slider vertical" type="range" min="-12" max="12" value="{{ state.eq_bands['230Hz'] }}" data-band="230Hz">
-            <span id="eq230Value">{{ state.eq_bands['230Hz'] }} dB</span>
-          </div>
-          <div class="eq-band vertical">
-            <label for="eq910">910Hz</label>
-            <input id="eq910" class="eq-slider vertical" type="range" min="-12" max="12" value="{{ state.eq_bands['910Hz'] }}" data-band="910Hz">
-            <span id="eq910Value">{{ state.eq_bands['910Hz'] }} dB</span>
-          </div>
-          <div class="eq-band vertical">
-            <label for="eq3600">3.6kHz</label>
-            <input id="eq3600" class="eq-slider vertical" type="range" min="-12" max="12" value="{{ state.eq_bands['3.6kHz'] }}" data-band="3.6kHz">
-            <span id="eq3600Value">{{ state.eq_bands['3.6kHz'] }} dB</span>
-          </div>
-          <div class="eq-band vertical">
-            <label for="eq14000">14kHz</label>
-            <input id="eq14000" class="eq-slider vertical" type="range" min="-12" max="12" value="{{ state.eq_bands['14kHz'] }}" data-band="14kHz">
-            <span id="eq14000Value">{{ state.eq_bands['14kHz'] }} dB</span>
-          </div>
-        </div>
+        <h2>Égaliseur</h2>
+        <p class="eq-placeholder" id="eqPlaceholder">
+          L'égaliseur paramétrique est actif côté serveur. L'éditeur de courbe
+          arrive à la prochaine étape.
+        </p>
       </article>
 
       <article class="panel">

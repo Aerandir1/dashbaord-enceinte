@@ -24,7 +24,7 @@ try:
 except Exception:  # pragma: no cover
     sd = None
 
-from app import app
+from app import app, eq
 from app.config import (
     ALSA_MIXER_CARD,
     ALSA_MIXER_CONTROL,
@@ -42,13 +42,6 @@ from app.config import (
 )
 
 
-EQ_PRESETS = {
-    "flat": {"60Hz": 0, "230Hz": 0, "910Hz": 0, "3.6kHz": 0, "14kHz": 0},
-    "bass_boost": {"60Hz": 6, "230Hz": 3, "910Hz": 0, "3.6kHz": -1, "14kHz": -2},
-    "vocal": {"60Hz": -2, "230Hz": 1, "910Hz": 4, "3.6kHz": 3, "14kHz": 1},
-    "treble_boost": {"60Hz": -2, "230Hz": -1, "910Hz": 1, "3.6kHz": 4, "14kHz": 6},
-}
-
 SPEAKER_STATE = {
     "device_name": "Enceinte Salon",
     "room": "Salon",
@@ -60,8 +53,6 @@ SPEAKER_STATE = {
         "airplay": {"name": "AirPlay", "online": True},
     },
     "active_service": "spotify",
-    "eq_preset": "flat",
-    "eq_bands": EQ_PRESETS["flat"].copy(),
     "updated_at": datetime.now(timezone.utc).isoformat(),
 }
 
@@ -1207,6 +1198,30 @@ def _updated_since(iso_value):
     return f"il y a {diff_hours} h"
 
 
+def _eq_payload(state):
+    """Etat de l'egaliseur tel que l'interface le consomme."""
+    return {
+        "bands": state["bands"],
+        "auto_preamp": state.get("auto_preamp", True),
+        "preamp": state.get("preamp", 0.0),
+        # Attenuation reellement appliquee : en mode automatique elle est
+        # deduite des bandes, l'interface doit pouvoir l'afficher.
+        "preamp_applied": state.get(
+            "preamp_applied",
+            eq.auto_preamp_db(state["bands"]) if state.get("auto_preamp", True) else state.get("preamp", 0.0),
+        ),
+        "band_types": {
+            "with_gain": list(eq.BAND_TYPES_WITH_GAIN),
+            "without_gain": list(eq.BAND_TYPES_WITHOUT_GAIN),
+        },
+        "limits": {
+            "freq": [eq.FREQ_MIN, eq.FREQ_MAX],
+            "gain": [eq.GAIN_MIN, eq.GAIN_MAX],
+            "q": [eq.Q_MIN, eq.Q_MAX],
+        },
+    }
+
+
 def _public_state():
     _sync_service_states()
     _sync_system_volume_state()
@@ -1397,31 +1412,49 @@ def api_volume():
     return jsonify(_public_state())
 
 
+@app.route("/api/eq", methods=["GET"])
+def api_eq_get():
+    state = eq.load_state()
+    return jsonify(_eq_payload(state))
+
+
 @app.route("/api/eq", methods=["POST"])
-def api_eq():
+def api_eq_set():
+    """Remplace l'egaliseur par les bandes fournies et les applique a chaud.
+
+    L'editeur de courbe detient l'etat complet et l'envoie tel quel : c'est
+    plus simple et plus sur que des modifications incrementales, qui peuvent
+    desynchroniser l'interface et le moteur.
+    """
     payload = request.json or {}
 
-    preset = payload.get("preset")
-    if preset:
-        if preset not in EQ_PRESETS:
-            return jsonify({"error": "Preset EQ invalide"}), 400
-        SPEAKER_STATE["eq_preset"] = preset
-        SPEAKER_STATE["eq_bands"] = EQ_PRESETS[preset].copy()
+    state = eq.load_state()
 
-    bands = payload.get("bands")
-    if isinstance(bands, dict):
-        for band_name, band_value in bands.items():
-            if band_name in SPEAKER_STATE["eq_bands"]:
-                SPEAKER_STATE["eq_bands"][band_name] = _clamp(int(band_value), -12, 12)
-        SPEAKER_STATE["eq_preset"] = "custom"
+    if "bands" in payload:
+        bands = eq.sanitize_bands(payload.get("bands"))
+        if not bands and payload.get("bands"):
+            return jsonify({"error": "Aucune bande exploitable dans la requête"}), 400
+        state["bands"] = bands
 
-    band_name = payload.get("band")
-    if band_name in SPEAKER_STATE["eq_bands"] and "gain" in payload:
-        SPEAKER_STATE["eq_bands"][band_name] = _clamp(int(payload["gain"]), -12, 12)
-        SPEAKER_STATE["eq_preset"] = "custom"
+    if "auto_preamp" in payload:
+        state["auto_preamp"] = bool(payload["auto_preamp"])
+
+    if "preamp" in payload:
+        try:
+            state["preamp"] = _clamp(float(payload["preamp"]), eq.PREAMP_MIN, eq.PREAMP_MAX)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Valeur de préampli invalide"}), 400
+
+    ok, error = eq.apply_state(state)
+    if not ok:
+        return jsonify({"error": error}), 502
 
     _touch_state()
-    return jsonify(_public_state())
+    response = _eq_payload(state)
+    if error:
+        # Applique, mais non persiste : l'interface doit pouvoir le signaler.
+        response["warning"] = error
+    return jsonify(response)
 
 
 @app.route("/api/source", methods=["POST"])
