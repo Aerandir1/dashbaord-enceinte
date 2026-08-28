@@ -1,0 +1,48 @@
+# Configuration CamillaDSP de l'enceinte.
+# Installee vers /etc/camilladsp/config.yml
+#
+# Chaine audio :
+#   librespot / shairport-sync
+#        -> dmix -> hw:Loopback,0,0   (ecriture dans la boucle ALSA)
+#        -> hw:Loopback,1,0           (CamillaDSP lit ici)
+#        -> EQ (biquads)
+#        -> hw:@CARD_INDEX@,0         (le DAC)
+#
+# Le dashboard modifie les filtres a chaud via le WebSocket (port 1234).
+# Ce fichier n'est donc que l'etat de DEPART : ne pas s'attendre a y voir les
+# reglages courants une fois l'interface utilisee.
+
+devices:
+  samplerate: 44100
+  # 1024 echantillons a 44,1 kHz = ~23 ms par bloc. Compromis entre latence et
+  # robustesse aux a-coups sur un Pi 3.
+  chunksize: 1024
+
+  # La boucle ALSA n'a pas d'horloge propre : c'est le DAC qui cadence, et
+  # CamillaDSP ajuste la lecture pour ne pas deriver.
+  enable_rate_adjust: true
+  adjust_period: 10
+
+  # Quand aucune source ne joue, la boucle n'envoie que du silence : au bout de
+  # 10 s CamillaDSP se met en pause au lieu de tourner pour rien.
+  silence_threshold: -80
+  silence_timeout: 10
+
+  capture:
+    type: Alsa
+    channels: 2
+    device: "hw:Loopback,1,0"
+    format: S16LE
+
+  playback:
+    type: Alsa
+    channels: 2
+    device: "hw:@CARD_INDEX@,0"
+    format: S16LE
+
+# Etape 1 : aucun filtre, passe-plat. L'EQ sera injecte par le dashboard.
+filters: {}
+
+mixers: {}
+
+pipeline: []

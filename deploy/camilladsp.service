@@ -1,0 +1,39 @@
+[Unit]
+Description=CamillaDSP (egaliseur de l'enceinte)
+Documentation=https://github.com/HEnquist/camilladsp
+After=sound.target
+# CamillaDSP est le seul a ecrire sur le DAC : il doit tourner en permanence,
+# independamment de la source active.
+
+[Service]
+Type=simple
+User=@RUN_USER@
+SupplementaryGroups=audio
+
+# -p 1234 : serveur WebSocket de pilotage, utilise par le dashboard pour
+# modifier les filtres pendant la lecture.
+# -a 127.0.0.1 : accessible uniquement depuis la machine.
+# -w : conserve la configuration recue meme si la lecture s'arrete.
+ExecStart=/usr/local/bin/camilladsp \
+    -p 1234 \
+    -a 127.0.0.1 \
+    -w \
+    -o /var/log/camilladsp.log \
+    /etc/camilladsp/config.yml
+
+# Ordonnancement temps reel : c'est desormais CamillaDSP qui alimente le DAC,
+# c'est donc lui qui ne doit jamais etre prive de CPU.
+CPUSchedulingPolicy=fifo
+CPUSchedulingPriority=45
+LimitRTPRIO=99
+LimitMEMLOCK=infinity
+
+# "on-failure" et non "always" : voir le commentaire dans librespot.service,
+# un always combine a des arrets propres provoque des boucles de redemarrage.
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target

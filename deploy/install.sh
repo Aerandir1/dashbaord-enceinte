@@ -139,6 +139,58 @@ esac
 echo "==> Configuration ALSA partagee (/etc/asound.conf, carte ${CARD_INDEX})"
 sed -e "s|@CARD_INDEX@|${CARD_INDEX}|g" "${DEPLOY_DIR}/asound.conf" > /etc/asound.conf
 
+# --- Boucle ALSA + CamillaDSP (egaliseur) -----------------------------------
+# Les sources ecrivent dans la boucle, CamillaDSP y lit, egalise, et alimente
+# le DAC. Le DAC n'a ainsi qu'un seul client.
+echo "==> Boucle ALSA (snd_aloop)"
+install -m 0644 "${DEPLOY_DIR}/aloop.conf" /etc/modprobe.d/enceinte-aloop.conf
+echo "snd_aloop" > /etc/modules-load.d/enceinte-aloop.conf
+if ! grep -q "^Loopback" /proc/asound/cards 2>/dev/null; then
+    modprobe -r snd_aloop 2>/dev/null || true
+    modprobe snd_aloop || {
+        echo "Impossible de charger snd_aloop." >&2
+        exit 1
+    }
+fi
+grep -q "Loopback" /proc/asound/cards || {
+    echo "La boucle ALSA n'apparait pas dans /proc/asound/cards." >&2
+    exit 1
+}
+
+if [ ! -x /usr/local/bin/camilladsp ]; then
+    echo "==> Installation de CamillaDSP"
+    CAMILLA_ARCH="$(dpkg --print-architecture)"
+    case "$CAMILLA_ARCH" in
+        arm64) CAMILLA_ASSET="camilladsp-linux-aarch64.tar.gz" ;;
+        armhf) CAMILLA_ASSET="camilladsp-linux-armv7.tar.gz" ;;
+        amd64) CAMILLA_ASSET="camilladsp-linux-amd64.tar.gz" ;;
+        *) echo "Architecture ${CAMILLA_ARCH} non geree pour CamillaDSP." >&2; exit 1 ;;
+    esac
+    CAMILLA_URL="$(curl -fsSL https://api.github.com/repos/HEnquist/camilladsp/releases/latest \
+        | grep -o "https://[^\"]*${CAMILLA_ASSET}" | head -n 1)"
+    test -n "$CAMILLA_URL"
+    TMP_TGZ="$(mktemp)"
+    curl -fsSL "$CAMILLA_URL" -o "$TMP_TGZ"
+    tar -xzf "$TMP_TGZ" -C /usr/local/bin camilladsp
+    rm -f "$TMP_TGZ"
+    chmod 0755 /usr/local/bin/camilladsp
+fi
+/usr/local/bin/camilladsp --version
+
+install -d /etc/camilladsp
+# La configuration n'est ecrasee que si elle n'existe pas : le dashboard y
+# ecrit les filtres, on ne veut pas perdre l'egaliseur regle par l'utilisateur.
+if [ ! -f /etc/camilladsp/config.yml ]; then
+    sed -e "s|@CARD_INDEX@|${CARD_INDEX}|g" "${DEPLOY_DIR}/camilladsp.yml" \
+        > /etc/camilladsp/config.yml
+fi
+chown -R "$RUN_USER" /etc/camilladsp
+install -m 0644 /dev/null /var/log/camilladsp.log
+chown "$RUN_USER" /var/log/camilladsp.log
+
+sed -e "s|@RUN_USER@|${RUN_USER}|g" "${DEPLOY_DIR}/camilladsp.service" \
+    > /etc/systemd/system/camilladsp.service
+
 # --- 6. Configuration shairport-sync ----------------------------------------
 echo "==> Configuration shairport-sync (sortie ${ALSA_DEVICE})"
 sed -e "s|@AIRPLAY_NAME@|${AIRPLAY_NAME}|g" \
@@ -186,8 +238,10 @@ echo "    source au demarrage : ${DEFAULT_SOURCE} (${SOURCE_UNIT})"
 systemctl disable "$OTHER_UNIT" >/dev/null 2>&1 || true
 systemctl stop "$OTHER_UNIT" >/dev/null 2>&1 || true
 
+# CamillaDSP doit demarrer AVANT la source : c'est lui qui consomme la boucle,
+# sinon la source ecrit dans le vide.
 failed=0
-for unit in avahi-daemon "$SOURCE_UNIT" dashboard-enceinte; do
+for unit in avahi-daemon camilladsp "$SOURCE_UNIT" dashboard-enceinte; do
     systemctl enable "$unit" >/dev/null 2>&1 || true
     systemctl restart "$unit" || true
     sleep 1
