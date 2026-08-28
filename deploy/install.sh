@@ -142,6 +142,20 @@ sed -e "s|@CARD_INDEX@|${CARD_INDEX}|g" "${DEPLOY_DIR}/asound.conf" > /etc/asoun
 # --- Boucle ALSA + CamillaDSP (egaliseur) -----------------------------------
 # Les sources ecrivent dans la boucle, CamillaDSP y lit, egalise, et alimente
 # le DAC. Le DAC n'a ainsi qu'un seul client.
+# --- Sortie jack 3,5 mm du Raspberry Pi ------------------------------------
+# L'audio integre est desactive par defaut des qu'une carte I2S est declaree.
+# On le reactive pour pouvoir choisir entre le DAC et le jack, sachant que
+# cette sortie est generee en PWM : nettement plus bruitee qu'un DAC I2S.
+BOOT_CONFIG=""
+for candidate in /boot/firmware/config.txt /boot/config.txt; do
+    [ -f "$candidate" ] && BOOT_CONFIG="$candidate" && break
+done
+if [ -n "$BOOT_CONFIG" ] && ! grep -qE "^\s*dtparam=audio=on" "$BOOT_CONFIG"; then
+    echo "==> Activation de la sortie jack (dtparam=audio=on dans ${BOOT_CONFIG})"
+    printf '\n# Sortie analogique integree, pour pouvoir choisir entre le DAC et le jack.\ndtparam=audio=on\n' >> "$BOOT_CONFIG"
+    NEEDS_REBOOT=1
+fi
+
 echo "==> Boucle ALSA (snd_aloop)"
 install -m 0644 "${DEPLOY_DIR}/aloop.conf" /etc/modprobe.d/enceinte-aloop.conf
 echo "snd_aloop" > /etc/modules-load.d/enceinte-aloop.conf
@@ -270,6 +284,12 @@ else
     echo " Installation terminee AVEC DES ERREURS (voir ci-dessus)."
 fi
 echo
+if [ "${NEEDS_REBOOT:-0}" = "1" ]; then
+    echo " ATTENTION : la sortie jack vient d'etre activee dans ${BOOT_CONFIG}."
+    echo " Elle n'apparaitra dans le dashboard qu'APRES un redemarrage :"
+    echo "     sudo reboot"
+    echo
+fi
 echo " Dashboard : http://$(hostname -I | awk '{print $1}'):${FLASK_PORT:-5001}"
 echo " Config    : ${ENV_FILE}"
 echo " Logs      : journalctl -fu dashboard-enceinte"

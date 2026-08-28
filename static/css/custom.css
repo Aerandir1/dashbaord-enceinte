@@ -572,3 +572,17 @@ input[type="range"] {
 @media (min-width: 900px) {
   #eqCanvas { height: 280px; }
 }
+
+/* Sélecteur intégré à une ligne de la box État. */
+.inline-select {
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding: 3px 6px;
+  max-width: 190px;
+}
+.inline-select:disabled { opacity: 0.5; }

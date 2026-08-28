@@ -120,7 +120,23 @@ function render(state) {
   });
 
   // ── Audio (format reellement joue, lu dans /proc/asound) ──
-  document.getElementById('audioOutput').textContent = state.audio_output || '—';
+  // La sortie est un choix : on ne la reecrit pas pendant que l'utilisateur
+  // deroule la liste, sous peine de refermer son menu.
+  const outputSelect = document.getElementById('outputSelect');
+  if (outputSelect && document.activeElement !== outputSelect) {
+    const wanted = (state.outputs || []).map((o) => o.id).join('|');
+    if (outputSelect.dataset.signature !== wanted) {
+      outputSelect.dataset.signature = wanted;
+      outputSelect.innerHTML = '';
+      (state.outputs || []).forEach((o) => {
+        const option = document.createElement('option');
+        option.value = o.id;
+        option.textContent = o.label;
+        outputSelect.appendChild(option);
+      });
+    }
+    if (state.active_output) outputSelect.value = state.active_output;
+  }
   const stream = state.audio_stream || {};
   document.getElementById('audioFormat').textContent = stream.playing
     ? `${(stream.rate / 1000).toFixed(1)} kHz · ${stream.bits} bits · ` +
@@ -185,6 +201,19 @@ document.querySelectorAll('[data-playback]').forEach((button) => {
     const state = await callApi('/api/playback', { action: button.dataset.playback });
     render(state);
   });
+});
+
+// Changer de sortie fait rouvrir un autre périphérique par CamillaDSP :
+// une brève coupure du son est normale.
+document.getElementById('outputSelect')?.addEventListener('change', async (event) => {
+  const select = event.target;
+  select.disabled = true;
+  try {
+    const state = await callApi('/api/output', { output: select.value });
+    if (state) render(state);
+  } finally {
+    select.disabled = false;
+  }
 });
 
 document.getElementById('volDown').addEventListener('click', async () => {

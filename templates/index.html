@@ -171,7 +171,18 @@
               </span>
             </strong>
           </li>
-          <li><span>Sortie</span> <strong id="audioOutput">{{ state.audio_output }}</strong></li>
+          <li>
+            <span><label for="outputSelect">Sortie</label></span>
+            <strong>
+              <select id="outputSelect" class="inline-select" aria-label="Sortie audio">
+                {% for output in state.outputs %}
+                  <option value="{{ output.id }}" {{ 'selected' if output.id == state.active_output else '' }}>
+                    {{ output.label }}
+                  </option>
+                {% endfor %}
+              </select>
+            </strong>
+          </li>
           <li>
             <span>Format</span>
             <strong id="audioFormat">

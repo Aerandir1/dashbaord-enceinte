@@ -23,6 +23,8 @@ CAMILLADSP_WS_URL = os.getenv("CAMILLADSP_WS_URL", "ws://127.0.0.1:1234")
 CAMILLADSP_CONFIG_FILE = os.getenv("CAMILLADSP_CONFIG_FILE", "/etc/camilladsp/config.yml")
 # Bandes reglees par l'utilisateur, rechargees au demarrage du dashboard.
 EQ_STATE_FILE = os.getenv("EQ_STATE_FILE", "/etc/camilladsp/eq-state.json")
+# Sortie physique choisie (HiFiBerry, jack 3,5 mm, HDMI...).
+ACTIVE_OUTPUT_FILE = os.getenv("ACTIVE_OUTPUT_FILE", "/etc/camilladsp/output.json")
 
 # Metadonnees Spotify, ecrites par le hook --onevent de librespot
 # (deploy/librespot-event.sh).

@@ -263,6 +263,66 @@ def _persist_camilla_config(config):
     os.replace(tmp, CAMILLADSP_CONFIG_FILE)
 
 
+def get_playback_device():
+    """Peripherique de lecture actuellement ouvert par CamillaDSP."""
+    if websocket is None:
+        return None
+    try:
+        connection = websocket.create_connection(CAMILLADSP_WS_URL, timeout=3)
+    except Exception:
+        return None
+    try:
+        config = json.loads(_command(connection, "GetConfigJson"))
+        return (config.get("devices", {}).get("playback", {}) or {}).get("device")
+    except Exception:
+        return None
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+
+
+def set_playback_device(device, audio_format):
+    """Fait basculer CamillaDSP sur une autre sortie physique.
+
+    CamillaDSP referme le peripherique courant et ouvre le nouveau : une breve
+    coupure du son est normale pendant la bascule.
+    """
+    if websocket is None:
+        return False, "Le module websocket-client est absent : impossible de piloter CamillaDSP."
+
+    with _LOCK:
+        try:
+            connection = websocket.create_connection(CAMILLADSP_WS_URL, timeout=5)
+        except Exception as exc:
+            return False, f"CamillaDSP est injoignable ({CAMILLADSP_WS_URL}) : {exc}"
+
+        try:
+            config = json.loads(_command(connection, "GetConfigJson"))
+            playback = config.setdefault("devices", {}).setdefault("playback", {})
+            playback["device"] = device
+            if audio_format:
+                playback["format"] = audio_format
+            _command(connection, {"SetConfigJson": json.dumps(config)})
+        except CamillaError as exc:
+            return False, str(exc)
+        except Exception as exc:
+            return False, f"Impossible de changer de sortie : {exc}"
+        finally:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
+    try:
+        _persist_camilla_config(config)
+    except OSError as exc:
+        return True, f"Sortie changée, mais non enregistrée ({exc})."
+
+    return True, None
+
+
 def camilla_status():
     """Etat de CamillaDSP, pour que l'interface sache si l'EQ est operant."""
     if websocket is None:

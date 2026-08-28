@@ -24,7 +24,7 @@ try:
 except Exception:  # pragma: no cover
     sd = None
 
-from app import app, eq
+from app import app, eq, outputs
 from app.config import (
     ALSA_MIXER_CARD,
     ALSA_MIXER_CONTROL,
@@ -624,13 +624,28 @@ _ALSA_CONTROL_CANDIDATES = (
     "Playback",
 )
 
-_ALSA_MIXER_CONTROL_CACHE = None
+# Cache indexe par carte : changer de sortie change de carte, donc de controle
+# de volume (le HiFiBerry expose "Digital", le jack du Pi expose "PCM").
+_ALSA_MIXER_CONTROL_CACHE = {}
+
+
+def _mixer_card():
+    """Carte portant le volume : celle de la sortie active.
+
+    Lecture de fichiers uniquement (/proc/asound + l'etat enregistre) : cette
+    fonction est appelee a chaque rafraichissement, elle doit rester gratuite.
+    """
+    if ALSA_MIXER_CARD:
+        return ALSA_MIXER_CARD
+    output = outputs.active_output()
+    return output["id"] if output else None
 
 
 def _amixer_command(*args):
     command = ["amixer"]
-    if ALSA_MIXER_CARD:
-        command.extend(["-c", ALSA_MIXER_CARD])
+    card = _mixer_card()
+    if card:
+        command.extend(["-c", card])
     command.extend(args)
     return command
 
@@ -647,13 +662,13 @@ def _alsa_control_has_switch(name):
 
 
 def _get_alsa_mixer_control():
-    global _ALSA_MIXER_CONTROL_CACHE
-    if _ALSA_MIXER_CONTROL_CACHE:
-        return _ALSA_MIXER_CONTROL_CACHE
+    card = _mixer_card() or "-"
+    if card in _ALSA_MIXER_CONTROL_CACHE:
+        return _ALSA_MIXER_CONTROL_CACHE[card]
 
     if ALSA_MIXER_CONTROL:
-        _ALSA_MIXER_CONTROL_CACHE = ALSA_MIXER_CONTROL
-        return _ALSA_MIXER_CONTROL_CACHE
+        _ALSA_MIXER_CONTROL_CACHE[card] = ALSA_MIXER_CONTROL
+        return ALSA_MIXER_CONTROL
 
     ok, stdout, _stderr = _run_command(_amixer_command("scontrols"))
     if not ok:
@@ -665,10 +680,10 @@ def _get_alsa_mixer_control():
 
     for name in ordered:
         if _alsa_control_has_volume(name):
-            _ALSA_MIXER_CONTROL_CACHE = name
-            break
+            _ALSA_MIXER_CONTROL_CACHE[card] = name
+            return name
 
-    return _ALSA_MIXER_CONTROL_CACHE
+    return None
 
 
 def _read_system_volume():
@@ -901,8 +916,10 @@ def _get_dac_name():
 
 def _get_audio_stream_info():
     """Format reellement joue, lu dans /proc/asound (vide si silencieux)."""
-    card = ALSA_MIXER_CARD or "0"
-    path = f"/proc/asound/card{card}/pcm0p/sub0/hw_params"
+    # /proc/asound expose un lien par NOM de carte : insensible a un
+    # renumerotage des index quand une carte apparait ou disparait.
+    card = _mixer_card()
+    path = f"/proc/asound/{card}/pcm0p/sub0/hw_params" if card else "/proc/asound/card0/pcm0p/sub0/hw_params"
 
     info = {"playing": False, "rate": None, "bits": None, "channels": None}
     try:
@@ -1264,7 +1281,10 @@ def _public_state():
         "airplay_remote": _get_airplay_remote_snapshot(),
         "spotify_metadata": spotify_metadata,
         "wifi": _get_wifi_info(),
-        "audio_output": _get_dac_name(),
+        "outputs": outputs.list_outputs(),
+        "active_output": (outputs.active_output() or {}).get("id"),
+        # Libelle de la sortie reellement utilisee, pas une carte figee.
+        "audio_output": (outputs.active_output() or {}).get("label") or _get_dac_name(),
         "audio_stream": audio_stream,
         "system": _get_system_health(),
         "active_service_name": active_service["name"] if active_service else "Aucune",
@@ -1410,6 +1430,41 @@ def api_volume():
 
     _touch_state()
     return jsonify(_public_state())
+
+
+@app.route("/api/output", methods=["POST"])
+def api_output():
+    """Bascule la sortie physique (HiFiBerry, jack 3,5 mm, HDMI...).
+
+    CamillaDSP etant le seul a ecrire sur le materiel, changer de sortie
+    revient a lui faire ouvrir un autre peripherique.
+    """
+    payload = request.json or {}
+    output_id = payload.get("output")
+
+    target = outputs.get_output(output_id) if output_id else None
+    if target is None:
+        return jsonify({"error": "Sortie inconnue ou indisponible"}), 400
+
+    ok, error = eq.set_playback_device(target["device"], target["format"])
+    if not ok:
+        return jsonify({"error": error}), 502
+
+    try:
+        outputs.save_active_id(target["id"])
+    except OSError as exc:
+        error = error or f"Sortie changée, mais non enregistrée ({exc})."
+
+    # La carte change : le controle de volume aussi, et le volume lu doit
+    # etre celui du nouveau peripherique.
+    _ALSA_MIXER_CONTROL_CACHE.clear()
+    _sync_system_volume_state(force=True)
+
+    _touch_state()
+    response = _public_state()
+    if error:
+        response["warning"] = error
+    return jsonify(response)
 
 
 @app.route("/api/eq", methods=["GET"])
