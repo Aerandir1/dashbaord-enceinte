@@ -150,10 +150,47 @@ BOOT_CONFIG=""
 for candidate in /boot/firmware/config.txt /boot/config.txt; do
     [ -f "$candidate" ] && BOOT_CONFIG="$candidate" && break
 done
-if [ -n "$BOOT_CONFIG" ] && ! grep -qE "^\s*dtparam=audio=on" "$BOOT_CONFIG"; then
-    echo "==> Activation de la sortie jack (dtparam=audio=on dans ${BOOT_CONFIG})"
-    printf '\n# Sortie analogique integree, pour pouvoir choisir entre le DAC et le jack.\ndtparam=audio=on\n' >> "$BOOT_CONFIG"
-    NEEDS_REBOOT=1
+if [ -n "$BOOT_CONFIG" ]; then
+    # ATTENTION : sur Raspberry Pi, un "dtparam=" place APRES une ligne
+    # "dtoverlay=" est applique a cet overlay, pas au device-tree de base.
+    # Ajoute en fin de fichier, dtparam=audio=on est donc sans aucun effet.
+    # Il doit imperativement preceder le premier dtoverlay.
+    if python3 - "$BOOT_CONFIG" <<'PYEOF'
+import re, sys
+
+path = sys.argv[1]
+lines = open(path, encoding="utf-8").read().splitlines(keepends=True)
+
+param = re.compile(r"^\s*dtparam=audio=", re.I)
+overlay = re.compile(r"^\s*dtoverlay=", re.I)
+
+first_overlay = next((i for i, l in enumerate(lines) if overlay.match(l)), len(lines))
+existing = [i for i, l in enumerate(lines) if param.match(l)]
+
+# Deja correctement place et actif : rien a faire.
+if any(i < first_overlay and l.strip().lower() == "dtparam=audio=on"
+       for i, l in ((j, lines[j]) for j in existing)):
+    sys.exit(1)
+
+for i in reversed(existing):
+    del lines[i]
+    if i < first_overlay:
+        first_overlay -= 1
+
+lines.insert(first_overlay, "# Sortie analogique integree (jack 3,5 mm).\ndtparam=audio=on\n")
+open(path, "w", encoding="utf-8").write("".join(lines))
+sys.exit(0)
+PYEOF
+    then
+        echo "==> Sortie jack activee (dtparam=audio=on place avant les overlays)"
+        NEEDS_REBOOT=1
+    fi
+
+    # Le pilote n'expose la sortie casque que si on la lui demande.
+    if [ ! -f /etc/modprobe.d/enceinte-headphones.conf ]; then
+        echo "options snd_bcm2835 enable_headphones=1" > /etc/modprobe.d/enceinte-headphones.conf
+        NEEDS_REBOOT=1
+    fi
 fi
 
 echo "==> Boucle ALSA (snd_aloop)"
