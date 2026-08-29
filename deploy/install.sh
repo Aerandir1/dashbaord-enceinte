@@ -126,6 +126,46 @@ FLASK_PORT="$(read_env FLASK_PORT 5001)"
 CARD_INDEX="$(printf '%s' "$ALSA_DEVICE" | sed -n 's/^\(plug\)\?hw:\([0-9]\{1,\}\).*/\2/p')"
 CARD_INDEX="${CARD_INDEX:-0}"
 
+# --- Carte du DAC, designee par NOM -----------------------------------------
+# CamillaDSP et le controle de volume par defaut visent le DAC. On le repere
+# par son NOM ALSA et jamais par un index : activer le jack integre du Pi ajoute
+# une carte et renumerote les index (le jack peut alors rafler l'index 0), ce
+# qui pointerait silencieusement la sortie sur le mauvais peripherique.
+DAC_CARD="$(python3 - <<'PYEOF'
+import os, re
+try:
+    content = open("/proc/asound/cards", encoding="utf-8").read()
+except OSError:
+    content = ""
+entries = []
+for m in re.finditer(r"^\s*(\d+)\s+\[([^\]]+)\]\s*:\s*(.*)$", content, re.M):
+    cid = m.group(2).strip()
+    if os.path.isdir(f"/proc/asound/{cid}/pcm0p"):
+        entries.append((cid, f"{cid} {m.group(3)}"))
+# 1) Un DAC I2S connu (HiFiBerry / pcm512x) en priorite.
+for cid, hay in entries:
+    if re.search(r"hifiberry|dacp|pcm512", hay, re.I):
+        print(cid); raise SystemExit
+# 2) Sinon la premiere sortie qui n'est ni la boucle, ni le jack, ni le HDMI.
+for cid, hay in entries:
+    if re.search(r"loopback|headphones|bcm2835|hdmi|vc4", hay, re.I):
+        continue
+    print(cid); raise SystemExit
+# 3) Dernier recours : la premiere carte de sortie disponible.
+if entries:
+    print(entries[0][0])
+PYEOF
+)"
+if [ -n "$DAC_CARD" ]; then
+    PLAYBACK_DEVICE="hw:CARD=${DAC_CARD},DEV=0"
+    CTL_CARD="$DAC_CARD"
+else
+    # Aucune carte detectee (rare) : on retombe sur l'index, faute de mieux.
+    PLAYBACK_DEVICE="hw:${CARD_INDEX},0"
+    CTL_CARD="$CARD_INDEX"
+fi
+echo "==> Sortie CamillaDSP (par nom) : ${PLAYBACK_DEVICE}"
+
 case "$ALSA_DEVICE" in
     hw:*|plughw:*)
         echo "==> ALSA_DEVICE=${ALSA_DEVICE} donne un acces EXCLUSIF a la carte :"
@@ -136,8 +176,8 @@ case "$ALSA_DEVICE" in
         ;;
 esac
 
-echo "==> Configuration ALSA partagee (/etc/asound.conf, carte ${CARD_INDEX})"
-sed -e "s|@CARD_INDEX@|${CARD_INDEX}|g" "${DEPLOY_DIR}/asound.conf" > /etc/asound.conf
+echo "==> Configuration ALSA partagee (/etc/asound.conf, ctl -> ${CTL_CARD})"
+sed -e "s|@CTL_CARD@|${CTL_CARD}|g" "${DEPLOY_DIR}/asound.conf" > /etc/asound.conf
 
 # --- Boucle ALSA + CamillaDSP (egaliseur) -----------------------------------
 # Les sources ecrivent dans la boucle, CamillaDSP y lit, egalise, et alimente
@@ -239,7 +279,39 @@ if [ -f "$CAMILLA_CONF" ] && ! /usr/local/bin/camilladsp -c "$CAMILLA_CONF" >/de
     mv -f "$CAMILLA_CONF" "${CAMILLA_CONF}.bak"
 fi
 if [ ! -f "$CAMILLA_CONF" ]; then
-    sed -e "s|@CARD_INDEX@|${CARD_INDEX}|g" "${DEPLOY_DIR}/camilladsp.yml" > "$CAMILLA_CONF"
+    sed -e "s|@PLAYBACK_DEVICE@|${PLAYBACK_DEVICE}|g" "${DEPLOY_DIR}/camilladsp.yml" > "$CAMILLA_CONF"
+else
+    # La config survit aux reinstallations (elle porte l'EQ de l'utilisateur),
+    # mais « camilladsp -c » ne valide que la SYNTAXE : une sortie designee par
+    # index (hw:0,0) reste acceptee alors qu'elle peut viser la mauvaise carte
+    # depuis l'ajout du jack. On migre donc toute sortie indexee vers le nom,
+    # sans toucher aux filtres.
+    python3 - "$CAMILLA_CONF" "$PLAYBACK_DEVICE" <<'PYEOF'
+import re, sys
+try:
+    import yaml
+except Exception:
+    sys.exit(0)  # PyYAML absent : on n'y touche pas plutot que de risquer un degat.
+path, device = sys.argv[1], sys.argv[2]
+try:
+    cfg = yaml.safe_load(open(path, encoding="utf-8"))
+except Exception:
+    sys.exit(0)
+if not isinstance(cfg, dict):
+    sys.exit(0)
+pb = (cfg.get("devices") or {}).get("playback") or {}
+current = pb.get("device", "")
+# Deja par nom : rien a faire.
+if "CARD=" in current:
+    sys.exit(0)
+# Sortie indexee (hw:0,0, plughw:1,0...) -> on la remplace par le nom.
+if re.match(r"^\s*(plug)?hw:\d", current):
+    pb["device"] = device
+    cfg["devices"]["playback"] = pb
+    yaml.safe_dump(cfg, open(path, "w", encoding="utf-8"),
+                   allow_unicode=True, sort_keys=False)
+    print(f"    sortie CamillaDSP migree {current!r} -> {device!r}")
+PYEOF
 fi
 # Refuse d'aller plus loin avec une configuration que CamillaDSP rejette.
 /usr/local/bin/camilladsp -c "$CAMILLA_CONF" >/dev/null

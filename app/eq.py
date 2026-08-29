@@ -202,6 +202,35 @@ def _command(connection, payload):
     return body.get("value")
 
 
+def _load_disk_config():
+    """Configuration de secours lue sur disque.
+
+    CamillaDSP demarre en mode attente (-w) : si sa sortie a change d'index et
+    refuse de s'ouvrir (ex. le jack a pris l'index 0 et n'accepte pas le 32
+    bits), il tourne SANS configuration active et GetConfigJson renvoie « null ».
+    On retombe alors sur le fichier deploye : le modifier puis le renvoyer
+    reactive CamillaDSP, au lieu de planter sur un None.
+    """
+    try:
+        with open(CAMILLADSP_CONFIG_FILE, "r", encoding="utf-8") as handle:
+            return yaml.safe_load(handle) if yaml is not None else json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+def _base_config(connection):
+    """Config a modifier : celle qui tourne si elle existe, sinon celle du disque."""
+    config = json.loads(_command(connection, "GetConfigJson"))
+    if config is None:
+        config = _load_disk_config()
+    if not isinstance(config, dict):
+        raise CamillaError(
+            "CamillaDSP n'a aucune configuration active et le fichier de secours "
+            "est introuvable ou illisible."
+        )
+    return config
+
+
 def apply_state(state):
     """Applique l'egaliseur a chaud, puis le persiste.
 
@@ -221,7 +250,7 @@ def apply_state(state):
             return False, f"CamillaDSP est injoignable ({CAMILLADSP_WS_URL}) : {exc}"
 
         try:
-            current = json.loads(_command(connection, "GetConfigJson"))
+            current = _base_config(connection)
             # On ne touche pas a "devices" : la chaine audie deployee reste
             # la reference, on ne fait que remplacer le traitement.
             current["filters"] = filters
@@ -299,7 +328,7 @@ def set_playback_device(device, audio_format):
             return False, f"CamillaDSP est injoignable ({CAMILLADSP_WS_URL}) : {exc}"
 
         try:
-            config = json.loads(_command(connection, "GetConfigJson"))
+            config = _base_config(connection)
             playback = config.setdefault("devices", {}).setdefault("playback", {})
             playback["device"] = device
             if audio_format:

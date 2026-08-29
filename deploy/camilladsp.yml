@@ -6,7 +6,7 @@
 #        -> dmix -> hw:Loopback,0,0   (ecriture dans la boucle ALSA)
 #        -> hw:Loopback,1,0           (CamillaDSP lit ici)
 #        -> EQ (biquads)
-#        -> hw:@CARD_INDEX@,0         (le DAC)
+#        -> @PLAYBACK_DEVICE@         (le DAC, designe par NOM de carte)
 #
 # Le dashboard modifie les filtres a chaud via le WebSocket (port 1234).
 # Ce fichier n'est donc que l'etat de DEPART : ne pas s'attendre a y voir les
@@ -39,7 +39,11 @@ devices:
   playback:
     type: Alsa
     channels: 2
-    device: "hw:@CARD_INDEX@,0"
+    # Carte designee par NOM (hw:CARD=...,DEV=0) et jamais par index : activer le
+    # jack du Pi ajoute une carte et decale les index, ce qui pointerait
+    # silencieusement CamillaDSP sur le mauvais peripherique. Le nom, lui, ne
+    # bouge pas.
+    device: "@PLAYBACK_DEVICE@"
     # 32 bits en sortie alors que l'entree est en 16 : l'egaliseur travaille en
     # virgule flottante, sortir en 32 bits evite de requantifier son resultat.
     # Formats acceptes par le DAC : S16_LE, S24_LE, S32_LE.
