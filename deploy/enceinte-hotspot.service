@@ -1,0 +1,13 @@
+[Unit]
+Description=Point d'acces de configuration de l'enceinte (si aucun Wi-Fi connu)
+Wants=NetworkManager.service
+After=NetworkManager.service network.target
+ConditionPathExists=/usr/local/bin/enceinte-hotspot.sh
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/enceinte-hotspot.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

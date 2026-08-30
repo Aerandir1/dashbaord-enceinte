@@ -5,3 +5,8 @@
 # shairport-sync et librespot. Aucun autre droit root n'est accorde.
 
 @RUN_USER@ ALL=(root) NOPASSWD: /usr/bin/systemctl start shairport-sync, /usr/bin/systemctl stop shairport-sync, /usr/bin/systemctl is-active shairport-sync, /usr/bin/systemctl start librespot, /usr/bin/systemctl stop librespot, /usr/bin/systemctl is-active librespot
+
+# Renommage + Wi-Fi + point d'acces : un unique helper root, qui VALIDE lui-meme
+# tous ses arguments (ils viennent d'une requete web). Le helper doit rester
+# root:root 0755, sinon le dashboard pourrait le reecrire et tout contourner.
+@RUN_USER@ ALL=(root) NOPASSWD: /usr/local/bin/enceinte-netctl

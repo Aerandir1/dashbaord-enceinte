@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Configuration — {{ device_name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+</head>
+<body data-theme="dark" data-auto-scan="1">
+  <main class="setup">
+    <section class="panel setup-panel">
+      <h1>Configurer {{ device_name }}</h1>
+      <p class="setup-intro">
+        Choisis le réseau Wi‑Fi auquel connecter l'enceinte, puis saisis son
+        mot de passe. Une fois connectée, l'enceinte quitte ce point d'accès.
+      </p>
+
+      <div class="setting-block">
+        <div class="setting-head">
+          <span class="field-label">Réseaux Wi‑Fi disponibles</span>
+          <button class="btn ghost" id="wifiScan">Rechercher</button>
+        </div>
+        <p class="setting-status" id="wifiStatusLine">—</p>
+        <ul class="wifi-list" id="wifiList"></ul>
+        <div class="setting-row wifi-connect-row" id="wifiConnectRow" hidden>
+          <input id="wifiPassword" class="text-input" type="password"
+                 placeholder="Mot de passe" autocomplete="off">
+          <button class="btn primary" id="wifiConnect">Connecter</button>
+        </div>
+        <p class="setting-hint" id="wifiHint"></p>
+      </div>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+</body>
+</html>

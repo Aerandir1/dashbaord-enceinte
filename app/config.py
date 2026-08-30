@@ -42,3 +42,19 @@ ALSA_MIXER_CONTROL = os.getenv("ALSA_MIXER_CONTROL", "").strip()
 ALSA_MIXER_CARD = os.getenv("ALSA_MIXER_CARD", "").strip()
 SUPERVISORCTL_BIN = os.getenv("SUPERVISORCTL_BIN", "supervisorctl")
 SUPERVISORD_CONFIG = os.getenv("SUPERVISORD_CONFIG", "/etc/supervisor/supervisord.conf")
+
+# --- Renommage + Wi-Fi + point d'acces (helper privilegie enceinte-netctl) ---
+# Unique frontiere root du dashboard : renommer les services, se connecter a un
+# Wi-Fi, monter un point d'acces. Appele en « sudo -n » (voir dashboard-sudoers).
+NETCTL_BIN = os.getenv("NETCTL_BIN", "/usr/local/bin/enceinte-netctl")
+NETCTL_USE_SUDO = _get_bool_env("NETCTL_USE_SUDO", "true")
+
+# Nom d'affichage de l'enceinte, ecrit par le dashboard, relu au demarrage.
+DEVICE_NAME_FILE = os.getenv("DEVICE_NAME_FILE", "/etc/camilladsp/device-name.json")
+
+# Point d'acces de configuration (1er demarrage sans Wi-Fi connu).
+HOTSPOT_SSID = os.getenv("HOTSPOT_SSID", "Enceinte-Setup")
+HOTSPOT_PASSWORD = os.getenv("HOTSPOT_PASSWORD", "enceinte-setup")
+# Marqueur pose par le helper quand le point d'acces est actif : sert au portail
+# captif a savoir s'il doit rediriger les sondes de connectivite.
+HOTSPOT_MARKER_FILE = os.getenv("HOTSPOT_MARKER_FILE", "/run/enceinte/hotspot-active")

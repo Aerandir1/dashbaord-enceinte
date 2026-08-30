@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-from flask import Response, jsonify, render_template, request, stream_with_context
+from flask import Response, jsonify, redirect, render_template, request, stream_with_context
 
 try:
     import numpy as np
@@ -24,10 +24,12 @@ try:
 except Exception:  # pragma: no cover
     sd = None
 
-from app import app, eq, outputs
+from app import app, eq, netctl, outputs
 from app.config import (
     ALSA_MIXER_CARD,
     ALSA_MIXER_CONTROL,
+    DEVICE_NAME_FILE,
+    HOTSPOT_MARKER_FILE,
     LIBRESPOT_METADATA_FILE,
     LIBRESPOT_SERVICE,
     LIBRESPOT_SYSTEMD_USER,
@@ -55,6 +57,38 @@ SPEAKER_STATE = {
     "active_service": "spotify",
     "updated_at": datetime.now(timezone.utc).isoformat(),
 }
+
+
+def _load_device_name():
+    """Relit le nom d'affichage choisi par l'utilisateur au demarrage.
+
+    Le nom systeme (Spotify/AirPlay/hostname) est pose par le helper root ; ce
+    fichier, ecrit cote dashboard, ne sert qu'a reafficher le meme nom ici.
+    """
+    try:
+        with open(DEVICE_NAME_FILE, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return
+    name = data.get("name")
+    if isinstance(name, str) and name.strip():
+        SPEAKER_STATE["device_name"] = name.strip()
+    room = data.get("room")
+    if isinstance(room, str) and room.strip():
+        SPEAKER_STATE["room"] = room.strip()
+
+
+def _save_device_name(name):
+    directory = os.path.dirname(DEVICE_NAME_FILE)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    tmp = f"{DEVICE_NAME_FILE}.tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump({"name": name, "room": SPEAKER_STATE.get("room")}, handle)
+    os.replace(tmp, DEVICE_NAME_FILE)
+
+
+_load_device_name()
 
 # Clients abonnés au flux temps réel (SSE)
 _SUBSCRIBERS = []
@@ -1570,6 +1604,113 @@ def api_source():
 
     _touch_state()
     return jsonify(_public_state())
+
+
+# ── Portail captif (mode point d'acces) ─────────────────────────────────────
+
+# Sondes de connectivite des systemes d'exploitation : les rediriger vers la
+# page de configuration declenche l'ouverture automatique du portail.
+_CAPTIVE_PROBES = frozenset({
+    "/generate_204", "/gen_204", "/ncsi.txt", "/connecttest.txt",
+    "/hotspot-detect.html", "/library/test/success.html",
+    "/canonical.html", "/success.txt", "/redirect",
+})
+
+
+@app.before_request
+def _captive_portal_redirect():
+    # N'intervient QUE si le point d'acces de configuration est actif : en
+    # fonctionnement normal, ce fichier n'existe pas -> cout quasi nul.
+    if request.path in _CAPTIVE_PROBES and os.path.exists(HOTSPOT_MARKER_FILE):
+        return redirect("/setup", code=302)
+    return None
+
+
+@app.route("/setup")
+def setup_page():
+    """Page de configuration Wi-Fi (onboarding / mode point d'acces)."""
+    return render_template("setup.html", device_name=SPEAKER_STATE["device_name"])
+
+
+# ── Nom de l'enceinte ────────────────────────────────────────────────────────
+
+@app.route("/api/name", methods=["POST"])
+def api_name():
+    payload = request.json or {}
+    name = (payload.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Nom vide."}), 400
+    if len(name) > 48:
+        return jsonify({"error": "Nom trop long (48 caractères maximum)."}), 400
+
+    # Propagation systeme (Spotify, AirPlay, hostname/mDNS) via le helper root.
+    # Redemarre les deux services : une breve coupure audio est normale.
+    try:
+        netctl.set_name(name)
+    except netctl.NetctlError as exc:
+        return jsonify({"error": f"Renommage impossible : {exc}"}), 502
+
+    SPEAKER_STATE["device_name"] = name
+    try:
+        _save_device_name(name)
+    except OSError:
+        pass
+
+    _touch_state()
+    return jsonify(_public_state())
+
+
+# ── Wi-Fi ─────────────────────────────────────────────────────────────────
+
+@app.route("/api/wifi/scan", methods=["GET"])
+def api_wifi_scan():
+    try:
+        networks = netctl.wifi_scan()
+    except netctl.NetctlError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify({"networks": networks})
+
+
+@app.route("/api/wifi/status", methods=["GET"])
+def api_wifi_status():
+    try:
+        return jsonify(netctl.wifi_status())
+    except netctl.NetctlError as exc:
+        return jsonify({"error": str(exc)}), 502
+
+
+@app.route("/api/wifi/connect", methods=["POST"])
+def api_wifi_connect():
+    payload = request.json or {}
+    ssid = (payload.get("ssid") or "").strip()
+    password = payload.get("password") or ""
+    if not ssid:
+        return jsonify({"error": "SSID manquant."}), 400
+
+    # ATTENTION : si le Pi bascule sur un autre reseau, son adresse change et
+    # cette reponse peut ne jamais atteindre le navigateur -- c'est attendu.
+    try:
+        netctl.wifi_connect(ssid, password)
+    except netctl.NetctlError as exc:
+        return jsonify({"error": f"Connexion à « {ssid} » impossible : {exc}"}), 502
+
+    return jsonify({"ok": True, "ssid": ssid})
+
+
+@app.route("/api/hotspot", methods=["POST"])
+def api_hotspot():
+    payload = request.json or {}
+    action = (payload.get("action") or "").strip().lower()
+    try:
+        if action == "start":
+            netctl.hotspot_start()
+        elif action == "stop":
+            netctl.hotspot_stop()
+        else:
+            return jsonify({"error": "Action inconnue (start|stop)."}), 400
+    except netctl.NetctlError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify({"ok": True, "hotspot": netctl.hotspot_active()})
 
 
 _start_shairport_metadata_monitor()

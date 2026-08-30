@@ -586,3 +586,47 @@ input[type="range"] {
   max-width: 190px;
 }
 .inline-select:disabled { opacity: 0.5; }
+
+/* ── Réglages : renommage + Wi-Fi ─────────────────────────────────────────── */
+.setting-block { margin-top: 14px; }
+.setting-block:first-of-type { margin-top: 6px; }
+.setting-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 8px;
+}
+.setting-row { display: flex; gap: 8px; align-items: center; }
+.text-input {
+  flex: 1 1 auto; min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.95rem;
+}
+.text-input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.setting-hint { color: var(--muted); font-size: 0.8rem; margin: 8px 0 0; }
+.setting-status { color: var(--muted); font-size: 0.85rem; margin: 6px 0; }
+
+.wifi-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 220px; overflow-y: auto; }
+.wifi-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 10px; border-radius: 8px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.wifi-item:hover { background: var(--panel-border); }
+.wifi-item.selected { border-color: var(--primary); }
+.wifi-item.active .wifi-name::after { content: " ·  connecté"; color: var(--muted); font-size: 0.8rem; }
+.wifi-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wifi-meta { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.wifi-signal { font-family: monospace; letter-spacing: 1px; }
+.wifi-empty { color: var(--muted); padding: 9px 10px; font-size: 0.9rem; }
+.wifi-connect-row { margin-top: 10px; }
+
+/* ── Page d'accueil /setup (onboarding) ───────────────────────────────────── */
+.setup {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.setup-panel { width: 100%; max-width: 460px; }
+.setup-intro { color: var(--muted); font-size: 0.9rem; margin: 6px 0 14px; }

@@ -255,10 +255,43 @@
         </ul>
       </article>
 
+      <article class="panel settings-panel">
+        <h2>Réglages</h2>
+
+        <div class="setting-block">
+          <label class="field-label" for="deviceNameInput">Nom de l'enceinte</label>
+          <div class="setting-row">
+            <input id="deviceNameInput" class="text-input" type="text" maxlength="48"
+                   value="{{ state.device_name }}" placeholder="Nom de l'enceinte">
+            <button class="btn" id="deviceNameSave">Renommer</button>
+          </div>
+          <p class="setting-hint">
+            Change le nom vu dans Spotify, AirPlay et sur le réseau.
+            Les services redémarrent brièvement.
+          </p>
+        </div>
+
+        <div class="setting-block">
+          <div class="setting-head">
+            <span class="field-label">Réseau Wi‑Fi</span>
+            <button class="btn ghost" id="wifiScan">Rechercher</button>
+          </div>
+          <p class="setting-status" id="wifiStatusLine">—</p>
+          <ul class="wifi-list" id="wifiList"></ul>
+          <div class="setting-row wifi-connect-row" id="wifiConnectRow" hidden>
+            <input id="wifiPassword" class="text-input" type="password"
+                   placeholder="Mot de passe" autocomplete="off">
+            <button class="btn primary" id="wifiConnect">Connecter</button>
+          </div>
+          <p class="setting-hint" id="wifiHint"></p>
+        </div>
+      </article>
+
     </section>
   </main>
 
   <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
   <script src="{{ url_for('static', filename='js/eq-editor.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/settings.js') }}"></script>
 </body>
 </html>

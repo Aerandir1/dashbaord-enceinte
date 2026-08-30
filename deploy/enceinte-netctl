@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# Helper privilegie de l'enceinte, appele par le dashboard via « sudo -n ».
+#
+# SECURITE -- a lire avant toute modification :
+#   Ce script est la SEULE frontiere root du dashboard. Tous ses arguments
+#   proviennent d'une requete web : ils sont NON FIABLES. On ne les passe donc
+#   jamais a un shell (aucun eval, aucune interpolation dans une commande
+#   shell) ; ils sont transmis tels quels a nmcli / hostnamectl via des
+#   tableaux d'arguments, ou traites par python3 en arguments positionnels.
+#
+#   Le fichier DOIT etre root:root 0755 : si l'utilisateur du dashboard pouvait
+#   le reecrire, il contournerait toute la limitation de droits.
+set -euo pipefail
+
+ENV_FILE="${ENCEINTE_ENV_FILE:-/etc/default/enceinte}"
+SHAIRPORT_CONF="${ENCEINTE_SHAIRPORT_CONF:-/etc/shairport-sync.conf}"
+WIFI_IFACE="${ENCEINTE_WIFI_IFACE:-wlan0}"
+HOTSPOT_MARKER="/run/enceinte/hotspot-active"
+
+die() { echo "$*" >&2; exit 1; }
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  set-name)
+    name="${1:-}"
+    [ -n "$name" ] || die "nom vide"
+    # Toute l'ecriture de fichiers passe par python3 : pas d'echappement sed
+    # hasardeux face a un nom arbitraire (&, /, guillemets, accents...).
+    python3 - "$ENV_FILE" "$SHAIRPORT_CONF" "$name" <<'PY'
+import re, sys
+
+env_file, shairport, name = sys.argv[1], sys.argv[2], sys.argv[3].strip()
+if not name or len(name) > 48 or any(ord(c) < 32 for c in name):
+    sys.exit("nom invalide")
+
+def set_env(path, key, value):
+    try:
+        lines = open(path, encoding="utf-8").read().splitlines()
+    except OSError:
+        lines = []
+    out, seen = [], False
+    for line in lines:
+        if re.match(rf"^\s*{key}=", line):
+            out.append(f"{key}={value}")
+            seen = True
+        else:
+            out.append(line)
+    if not seen:
+        out.append(f"{key}={value}")
+    open(path, "w", encoding="utf-8").write("\n".join(out) + "\n")
+
+# systemd (EnvironmentFile) accepte les espaces sans guillemets.
+set_env(env_file, "SPOTIFY_NAME", name)
+set_env(env_file, "AIRPLAY_NAME", name)
+
+# /etc/shairport-sync.conf : name = "...";
+try:
+    conf = open(shairport, encoding="utf-8").read()
+    safe = name.replace("\\", "\\\\").replace('"', '\\"')
+    conf, n = re.subn(r'(?m)^(\s*)name\s*=\s*".*?"\s*;.*$', rf'\1name = "{safe}";', conf)
+    if n:
+        open(shairport, "w", encoding="utf-8").write(conf)
+except OSError:
+    pass
+print("ok")
+PY
+    # Hostname derive (RFC 1123 : lettres, chiffres, tirets) pour le mDNS.
+    host="$(printf '%s' "$name" | python3 -c \
+'import sys, re; s = re.sub(r"[^a-z0-9-]", "-", sys.stdin.read().strip().lower()).strip("-"); print(s[:32] or "enceinte")')"
+    [ -n "$host" ] && hostnamectl set-hostname "$host" 2>/dev/null || true
+    # try-restart : ne relance QUE le service en cours. librespot et
+    # shairport-sync se declarent mutuellement Conflicts= ; un « restart » des
+    # deux tenterait d'en demarrer un qui doit rester arrete. Celui a l'arret
+    # prendra le nouveau nom a son prochain demarrage.
+    systemctl try-restart librespot shairport-sync 2>/dev/null || true
+    systemctl restart avahi-daemon 2>/dev/null || true
+    echo "name=${name} hostname=${host:-unchanged}"
+    ;;
+
+  wifi-scan)
+    # --rescan auto : nmcli decide s'il relance un balayage (evite d'attendre).
+    nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY device wifi list --rescan auto 2>/dev/null \
+      || nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY device wifi list 2>/dev/null \
+      || true
+    ;;
+
+  wifi-status)
+    nmcli -t -f DEVICE,STATE,CONNECTION device status 2>/dev/null \
+      | grep "^${WIFI_IFACE}:" || true
+    echo "CONNECTIVITY:$(nmcli -t -f CONNECTIVITY general status 2>/dev/null || echo unknown)"
+    ;;
+
+  wifi-connect)
+    ssid="${1:-}"
+    password="${2:-}"
+    [ -n "$ssid" ] || die "ssid vide"
+    # On sort d'abord du mode point d'acces, sinon la connexion echouerait.
+    nmcli connection down Hotspot 2>/dev/null || true
+    if [ -n "$password" ]; then
+        nmcli -w 25 device wifi connect "$ssid" password "$password" ifname "$WIFI_IFACE"
+    else
+        nmcli -w 25 device wifi connect "$ssid" ifname "$WIFI_IFACE"
+    fi
+    rm -f "$HOTSPOT_MARKER" 2>/dev/null || true
+    ;;
+
+  wifi-forget)
+    ssid="${1:-}"
+    [ -n "$ssid" ] || die "ssid vide"
+    # Supprime uniquement le profil au nom EXACTEMENT egal (pas de motif).
+    while IFS= read -r conn; do
+        [ "$conn" = "$ssid" ] && nmcli connection delete "$conn" 2>/dev/null || true
+    done < <(nmcli -t -f NAME connection show 2>/dev/null)
+    ;;
+
+  hotspot-start)
+    ssid="${1:-Enceinte-Setup}"
+    password="${2:-}"
+    mkdir -p "$(dirname "$HOTSPOT_MARKER")"
+    if [ -n "$password" ]; then
+        nmcli device wifi hotspot ifname "$WIFI_IFACE" ssid "$ssid" password "$password"
+    else
+        nmcli device wifi hotspot ifname "$WIFI_IFACE" ssid "$ssid"
+    fi
+    : > "$HOTSPOT_MARKER"
+    echo "hotspot up: $ssid"
+    ;;
+
+  hotspot-stop)
+    nmcli connection down Hotspot 2>/dev/null || true
+    rm -f "$HOTSPOT_MARKER" 2>/dev/null || true
+    # Retour au Wi-Fi habituel s'il existe un profil connu.
+    nmcli device connect "$WIFI_IFACE" 2>/dev/null || true
+    echo "hotspot down"
+    ;;
+
+  hotspot-status)
+    [ -f "$HOTSPOT_MARKER" ] && echo "active" || echo "inactive"
+    ;;
+
+  *)
+    die "commande inconnue: ${cmd:-<vide>}"
+    ;;
+esac

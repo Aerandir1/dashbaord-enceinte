@@ -351,6 +351,37 @@ if ! visudo -cf /etc/sudoers.d/dashboard-enceinte >/dev/null; then
     exit 1
 fi
 
+# --- 8b. Helper reseau privilegie (renommage + Wi-Fi + point d'acces) -------
+# root:root 0755 est CRITIQUE : c'est la seule frontiere root du dashboard.
+# S'il etait modifiable par l'utilisateur du dashboard, toute la limitation de
+# droits tomberait.
+echo "==> Helper reseau (enceinte-netctl)"
+install -o root -g root -m 0755 "${DEPLOY_DIR}/enceinte-netctl" /usr/local/bin/enceinte-netctl
+install -o root -g root -m 0755 "${DEPLOY_DIR}/enceinte-hotspot.sh" /usr/local/bin/enceinte-hotspot.sh
+# Le fichier d'affichage du nom est ecrit par le dashboard : dossier accessible.
+install -d -o "$RUN_USER" /etc/camilladsp
+
+# Point d'acces de configuration au demarrage -- OPTIONNEL.
+ENABLE_SETUP_HOTSPOT="$(read_env ENABLE_SETUP_HOTSPOT false)"
+install -m 0644 "${DEPLOY_DIR}/enceinte-hotspot.service" \
+    /etc/systemd/system/enceinte-hotspot.service
+case "$ENABLE_SETUP_HOTSPOT" in
+    1|true|yes|on|TRUE|True|YES|ON)
+        echo "==> Point d'acces de configuration au demarrage : ACTIVE"
+        install -d /etc/NetworkManager/dnsmasq-shared.d
+        install -m 0644 "${DEPLOY_DIR}/dnsmasq-captive.conf" \
+            /etc/NetworkManager/dnsmasq-shared.d/enceinte-captive.conf
+        systemctl enable enceinte-hotspot.service >/dev/null 2>&1 || true
+        echo "    (portail automatique complet : requiert ENABLE_NGINX=true)"
+        ;;
+    *)
+        echo "==> Point d'acces de configuration au demarrage : desactive"
+        echo "    (ENABLE_SETUP_HOTSPOT=true dans ${ENV_FILE} pour l'activer)"
+        systemctl disable enceinte-hotspot.service >/dev/null 2>&1 || true
+        rm -f /etc/NetworkManager/dnsmasq-shared.d/enceinte-captive.conf
+        ;;
+esac
+
 # --- 9. Activation -----------------------------------------------------------
 echo "==> Activation des services"
 systemctl daemon-reload

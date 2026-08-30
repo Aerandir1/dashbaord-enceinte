@@ -1,20 +1,34 @@
-FONCTIONNALITES A AJOUTER (memo -- a traiter plus tard)
-========================================================
+FONCTIONNALITES -- ETAT
+=======================
 
-1) Changer le nom de l'enceinte
-   - Renommer l'appareil depuis le dashboard.
-   - Doit se repercuter sur : le nom AirPlay (shairport-sync), le nom Spotify
-     Connect (librespot), le hostname / mDNS (avahi) et l'affichage du dashboard.
-   - Redemarrer les services concernes apres le changement.
+1) Changer le nom de l'enceinte .............................. FAIT
+   - Panneau "Reglages" du dashboard : champ nom + bouton Renommer.
+   - Se repercute sur : nom Spotify (SPOTIFY_NAME), nom AirPlay (name= dans
+     shairport-sync.conf), hostname/mDNS (avahi), affichage du dashboard.
+   - Route POST /api/name -> helper root enceinte-netctl set-name.
+   - Les services concernes redemarrent (try-restart) pour prendre le nom.
 
-2) Changer de reseau Wi-Fi
-   - Choisir / saisir un autre reseau Wi-Fi depuis le dashboard.
-   - Lister les reseaux visibles, entrer le mot de passe, se connecter.
-   - Gerer le cas ou la connexion echoue (revenir a l'ancien reseau).
+2) Changer de reseau Wi-Fi .................................... FAIT
+   - Panneau "Reglages" : bouton Rechercher, liste des reseaux, mot de passe,
+     Connecter.
+   - Routes /api/wifi/scan, /api/wifi/status, /api/wifi/connect -> nmcli via
+     le helper root.
+   - NB : en changeant de reseau, l'adresse IP de l'enceinte peut changer ;
+     l'interface previent qu'il faut la rejoindre a sa nouvelle adresse.
 
-3) Configuration Wi-Fi a la premiere connexion (mode point d'acces)
-   - Au premier demarrage (aucun Wi-Fi connu), le Raspberry Pi cree son propre
-     point d'acces Wi-Fi (hotspot).
-   - On s'y connecte, une page de configuration s'ouvre (portail captif).
-   - On y selectionne le reseau Wi-Fi voulu + mot de passe.
-   - Le Pi bascule alors sur ce reseau et coupe le point d'acces.
+3) Config Wi-Fi au 1er demarrage (point d'acces + portail) ... FAIT (opt-in)
+   - Si aucun Wi-Fi connu au boot, l'enceinte monte un point d'acces
+     "Enceinte-Setup" et sert la page /setup pour choisir le reseau.
+   - Portail captif : redirection DNS (dnsmasq-shared.d) + redirection des
+     sondes de connectivite vers /setup -> la page s'ouvre toute seule.
+   - Active via ENABLE_SETUP_HOTSPOT=true dans /etc/default/enceinte.
+   - Portail AUTOMATIQUE complet : requiert aussi ENABLE_NGINX=true (port 80).
+     Sans nginx : http://10.42.0.1:5001/setup a la main.
+   - Laisse a false tant que l'enceinte a deja un Wi-Fi (evite toute coupure).
+
+Fichiers clefs : app/netctl.py, app/views.py (routes), static/js/settings.js,
+templates/setup.html, deploy/enceinte-netctl (helper root), deploy/dashboard-
+sudoers, deploy/enceinte-hotspot.{sh,service}, deploy/dnsmasq-captive.conf.
+
+PISTE FUTURE (non fait) : brancher Music Assistant / Squeezelite comme vraie
+source backend (aujourd'hui juste annoncee "Bientot" dans le selecteur).
