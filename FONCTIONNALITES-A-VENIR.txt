@@ -1,0 +1,20 @@
+FONCTIONNALITES A AJOUTER (memo -- a traiter plus tard)
+========================================================
+
+1) Changer le nom de l'enceinte
+   - Renommer l'appareil depuis le dashboard.
+   - Doit se repercuter sur : le nom AirPlay (shairport-sync), le nom Spotify
+     Connect (librespot), le hostname / mDNS (avahi) et l'affichage du dashboard.
+   - Redemarrer les services concernes apres le changement.
+
+2) Changer de reseau Wi-Fi
+   - Choisir / saisir un autre reseau Wi-Fi depuis le dashboard.
+   - Lister les reseaux visibles, entrer le mot de passe, se connecter.
+   - Gerer le cas ou la connexion echoue (revenir a l'ancien reseau).
+
+3) Configuration Wi-Fi a la premiere connexion (mode point d'acces)
+   - Au premier demarrage (aucun Wi-Fi connu), le Raspberry Pi cree son propre
+     point d'acces Wi-Fi (hotspot).
+   - On s'y connecte, une page de configuration s'ouvre (portail captif).
+   - On y selectionne le reseau Wi-Fi voulu + mot de passe.
+   - Le Pi bascule alors sur ce reseau et coupe le point d'acces.

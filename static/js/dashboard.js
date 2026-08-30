@@ -96,6 +96,17 @@ function initTheme() {
   }
 }
 
+// L'écran de chargement s'efface au tout premier état reçu (que ce soit via
+// /api/state ou le premier événement SSE), une seule fois.
+let _splashDismissed = false;
+function dismissSplash() {
+  if (_splashDismissed) return;
+  _splashDismissed = true;
+  document.body.classList.add('is-ready');
+  // Retiré du DOM après le fondu pour ne rien laisser traîner.
+  setTimeout(() => document.getElementById('appSplash')?.remove(), 500);
+}
+
 function render(state) {
   if (!state) return;
 
@@ -194,6 +205,8 @@ function render(state) {
   playBtn.setAttribute('title', state.is_playing ? 'Pause' : 'Lecture');
   document.getElementById('muteBtn').textContent = state.muted ? 'Activer le son' : 'Muet';
 
+  // Premier rendu réussi : on peut effacer l'écran de chargement.
+  dismissSplash();
 }
 
 document.querySelectorAll('[data-playback]').forEach((button) => {
@@ -313,4 +326,19 @@ fetchState().then((state) => {
 });
 
 startRealtimeSync();
+
+// Filet de sécurité : si aucun état n'arrive (serveur en erreur), on n'enferme
+// pas l'utilisateur sur l'écran de chargement — la coquille reste utilisable.
+setTimeout(dismissSplash, 8000);
+
+// Service Worker : au prochain lancement, la coquille se peint instantanément
+// depuis le cache, avant même le premier aller-retour réseau. Il n'est
+// enregistré qu'en contexte sécurisé (HTTPS ou localhost) ; en HTTP sur le LAN
+// le navigateur le refuse, ce bloc reste donc sans effet jusqu'à un passage en
+// HTTPS (voir le reverse proxy nginx dans deploy/).
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
 

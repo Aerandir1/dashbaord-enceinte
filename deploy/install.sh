@@ -385,6 +385,39 @@ for unit in avahi-daemon camilladsp "$SOURCE_UNIT" dashboard-enceinte; do
     fi
 done
 
+# --- Reverse proxy nginx (ecran de chargement au boot) -- optionnel ---------
+# Sert un ecran de chargement statique INSTANTANE tant que waitress demarre,
+# puis proxifie vers le dashboard. waitress continue d'ecouter sur son port :
+# l'acces direct reste possible, nginx ajoute juste le port 80 + l'ecran.
+ENABLE_NGINX="$(read_env ENABLE_NGINX false)"
+NGINX_URL=""
+case "$ENABLE_NGINX" in
+    1|true|yes|on|TRUE|True|YES|ON)
+        echo "==> nginx : reverse proxy + ecran de chargement au demarrage"
+        apt-get install -y nginx
+        install -d /var/www/enceinte
+        install -m 0644 "${DEPLOY_DIR}/splash.html" /var/www/enceinte/splash.html
+        install -m 0644 "${DEPLOY_DIR}/nginx-enceinte.conf" \
+            /etc/nginx/sites-available/enceinte
+        ln -sf /etc/nginx/sites-available/enceinte /etc/nginx/sites-enabled/enceinte
+        # Le site par defaut ecoute aussi en 80 (default_server) : conflit.
+        rm -f /etc/nginx/sites-enabled/default
+        if nginx -t; then
+            systemctl enable nginx >/dev/null 2>&1 || true
+            systemctl reload nginx 2>/dev/null || systemctl restart nginx || true
+            NGINX_URL="http://$(hostname -I | awk '{print $1}')/"
+            echo "    OK  nginx -> ${NGINX_URL}"
+        else
+            failed=1
+            echo "    ECHEC  configuration nginx invalide (voir ci-dessus)."
+        fi
+        ;;
+    *)
+        echo "==> nginx desactive (ENABLE_NGINX=false)."
+        echo "    Pour l'ecran de chargement au boot : ENABLE_NGINX=true dans ${ENV_FILE}."
+        ;;
+esac
+
 echo
 echo "===================================================================="
 if [ "$failed" -eq 0 ]; then
@@ -400,6 +433,9 @@ if [ "${NEEDS_REBOOT:-0}" = "1" ]; then
     echo
 fi
 echo " Dashboard : http://$(hostname -I | awk '{print $1}'):${FLASK_PORT:-5001}"
+if [ -n "$NGINX_URL" ]; then
+    echo "     ou via nginx (ecran de chargement au boot) : ${NGINX_URL}"
+fi
 echo " Config    : ${ENV_FILE}"
 echo " Logs      : journalctl -fu dashboard-enceinte"
 echo "===================================================================="

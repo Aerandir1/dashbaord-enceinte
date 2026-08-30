@@ -4,9 +4,53 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard Enceinte Connectée</title>
+  <style>
+    /* Écran de chargement — CSS INLINE dans le <head> pour peindre au tout
+       premier rendu, sans attendre custom.css ni /api/state. C'est ce qui rend
+       le lancement instantané et « joli » : la coquille arrive, cet écran la
+       recouvre, puis il s'efface en fondu au premier état reçu. */
+    #appSplash {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 1.4rem;
+      background: #0d1117; color: #e6edf3;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      transition: opacity .45s ease, visibility .45s ease;
+    }
+    #appSplash .splash-logo {
+      display: flex; align-items: flex-end; justify-content: center;
+      gap: 6px; height: 76px;
+    }
+    #appSplash .splash-bar {
+      width: 10px; border-radius: 6px; transform-origin: bottom;
+      background: linear-gradient(180deg, #4f8cff, #7c5cff);
+      animation: splashBars 1s ease-in-out infinite;
+    }
+    #appSplash .splash-bar:nth-child(1) { height: 34px; animation-delay: 0s; }
+    #appSplash .splash-bar:nth-child(2) { height: 60px; animation-delay: .15s; }
+    #appSplash .splash-bar:nth-child(3) { height: 76px; animation-delay: .30s; }
+    #appSplash .splash-bar:nth-child(4) { height: 48px; animation-delay: .45s; }
+    #appSplash .splash-title { font-size: 1.15rem; font-weight: 600; letter-spacing: .02em; }
+    #appSplash .splash-sub { font-size: .85rem; opacity: .6; }
+    @keyframes splashBars { 0%, 100% { transform: scaleY(.4); } 50% { transform: scaleY(1); } }
+    /* Une fois l'appli prête, on masque l'écran (JS ajoute .is-ready). */
+    body.is-ready #appSplash { opacity: 0; visibility: hidden; pointer-events: none; }
+    @media (prefers-reduced-motion: reduce) { #appSplash .splash-bar { animation: none; } }
+    @media (prefers-color-scheme: light) {
+      #appSplash { background: #f6f8fa; color: #1f2328; }
+    }
+  </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
 </head>
 <body data-theme="dark">
+  <div id="appSplash" role="status" aria-live="polite" aria-label="Chargement du tableau de bord">
+    <div class="splash-logo" aria-hidden="true">
+      <span class="splash-bar"></span><span class="splash-bar"></span>
+      <span class="splash-bar"></span><span class="splash-bar"></span>
+    </div>
+    <div class="splash-title">Enceinte</div>
+    <div class="splash-sub">Chargement…</div>
+  </div>
   <main class="dashboard">
     <header class="panel">
       <div>

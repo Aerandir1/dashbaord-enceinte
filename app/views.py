@@ -1292,9 +1292,49 @@ def _public_state():
     }
 
 
+def _shell_state():
+    """Etat « coquille » servi INSTANTANEMENT par la page d'accueil.
+
+    La route « / » ne doit rien sonder (Wi-Fi, ALSA, CamillaDSP, temperature) :
+    chaque sonde retarde le premier octet de la page, precisement au lancement,
+    la ou l'utilisateur regarde. On renvoie donc des valeurs neutres ; la page
+    peint son ecran de chargement, puis le client remplit tout via /api/state
+    et le flux SSE. C'est ce qui rend l'ecran de chargement credible : la page
+    arrive tout de suite, l'ecran masque juste le temps de recuperer l'etat.
+    """
+    active_key = SPEAKER_STATE.get("active_service")
+    active = SPEAKER_STATE["services"].get(active_key) if active_key else None
+    return {
+        **SPEAKER_STATE,
+        "current_track": "—",
+        "current_artist": "—",
+        "wifi": {"ssid": None, "signal_dbm": None, "bars": 0},
+        "outputs": [],
+        "active_output": None,
+        "audio_output": "—",
+        "audio_stream": {"playing": False, "rate": 0, "bits": 0, "channels": 0},
+        "system": {"temperature_c": None, "power_ok": None, "power_label": "—"},
+        "active_service_name": active["name"] if active else "Aucune",
+        "updated_since": "chargement…",
+    }
+
+
 @app.route("/")
 def index():
-    return render_template("index.html", state=_public_state())
+    # Coquille servie sans aucune sonde materielle : le premier octet part
+    # immediatement, la page affiche son ecran de chargement, puis se remplit
+    # via /api/state + SSE.
+    return render_template("index.html", state=_shell_state())
+
+
+@app.route("/sw.js")
+def service_worker():
+    # Le Service Worker doit etre servi depuis la racine pour couvrir tout le
+    # site (scope « / »), meme si le fichier vit dans /static.
+    response = app.send_static_file("js/sw.js")
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @app.route("/api/state", methods=["GET"])
@@ -1533,4 +1573,24 @@ def api_source():
 
 
 _start_shairport_metadata_monitor()
+
+
+def _prewarm_state_cache():
+    """Chauffe le cache d'etat des le demarrage du service.
+
+    Le premier appel a /api/state paie sinon le cout complet des sondes
+    (Wi-Fi, ALSA, CamillaDSP, temperature) juste au lancement. On le fait en
+    tache de fond, sans bloquer le demarrage, pour que la premiere requete du
+    navigateur trouve un cache deja chaud.
+    """
+    try:
+        _public_state()
+    except Exception:
+        # Un echec de prechauffage n'est pas critique : /api/state resondera.
+        pass
+
+
+threading.Thread(
+    target=_prewarm_state_cache, name="state-prewarm", daemon=True
+).start()
 
