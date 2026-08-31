@@ -30,12 +30,15 @@ Fichiers clefs : app/netctl.py, app/views.py (routes), static/js/settings.js,
 templates/setup.html, deploy/enceinte-netctl (helper root), deploy/dashboard-
 sudoers, deploy/enceinte-hotspot.{sh,service}, deploy/dnsmasq-captive.conf.
 
-PROCHAINE ETAPE (demandee) : integrer PROPREMENT les metadonnees AirPlay.
-   - shairport-sync est prevu pour ca (pipe/UDP de metadonnees + hook).
-     Ref : https://github.com/mikebrady/shairport-sync
-   - Deja en place : lecture du pipe (_get_airplay_metadata_snapshot dans
-     app/views.py, SHAIRPORT_METADATA_PIPE). A fiabiliser : titre/artiste/album
-     + pochette, fraicheur, et remontee propre dans la carte "En lecture".
+Metadonnees + controle AirPlay ............................... FAIT
+   - Via l'interface MPRIS de shairport-sync (bus D-Bus systeme), interrogee
+     avec « busctl --json » -> app/airplay.py. Aucune dependance Python D-Bus.
+   - Metadonnees : titre / artiste / album (+ pochette via mpris:artUrl,
+     include_cover_art = "yes" ; servie par /api/airplay/cover).
+   - Controle : Play / Pause / PlayPause / Next / Previous (permis pour
+     l'utilisateur du dashboard sur le bus systeme, verifie en live).
+   - Remplace l'ancienne voie tube + DACP (le port DACP n'etait jamais publie).
+     Le tube reste comme repli si un vieux build sans dbus/mpris etait utilise.
 
 PISTE FUTURE (non fait) : brancher Music Assistant / Squeezelite comme vraie
 source backend (aujourd'hui juste annoncee "Bientot" dans le selecteur).

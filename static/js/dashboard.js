@@ -210,6 +210,21 @@ function render(state) {
   playBtn.setAttribute('title', state.is_playing ? 'Pause' : 'Lecture');
   document.getElementById('muteBtn').textContent = state.muted ? 'Activer le son' : 'Muet';
 
+  // ── Pochette (AirPlay via MPRIS) ──
+  const npArt = document.querySelector('.np-art');
+  const npCover = document.getElementById('npCover');
+  if (npArt && npCover) {
+    if (state.airplay_cover) {
+      if (npCover.getAttribute('src') !== state.airplay_cover) npCover.src = state.airplay_cover;
+      npCover.hidden = false;
+      npArt.classList.add('has-cover');
+    } else {
+      npCover.hidden = true;
+      npCover.removeAttribute('src');
+      npArt.classList.remove('has-cover');
+    }
+  }
+
   // Premier rendu réussi : on peut effacer l'écran de chargement.
   dismissSplash();
 }

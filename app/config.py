@@ -18,6 +18,12 @@ LIBRESPOT_SYSTEMD_USER = _get_bool_env("LIBRESPOT_SYSTEMD_USER", "true")
 LIBRESPOT_USE_SUDO = _get_bool_env("LIBRESPOT_USE_SUDO")
 SHAIRPORT_METADATA_PIPE = os.getenv("SHAIRPORT_METADATA_PIPE", "/tmp/shairport-sync-metadata")
 
+# Interface MPRIS de shairport-sync (bus systeme D-Bus). C'est la voie propre,
+# prevue pour ca : metadonnees (titre/artiste/album/pochette) ET controle
+# (play/pause/suivant/precedent), sans analyse de tube ni resolution DACP.
+SHAIRPORT_MPRIS_DEST = os.getenv("SHAIRPORT_MPRIS_DEST", "org.mpris.MediaPlayer2.ShairportSync")
+SHAIRPORT_MPRIS_PATH = os.getenv("SHAIRPORT_MPRIS_PATH", "/org/mpris/MediaPlayer2")
+
 # Egaliseur : CamillaDSP expose un WebSocket de pilotage sur la machine.
 CAMILLADSP_WS_URL = os.getenv("CAMILLADSP_WS_URL", "ws://127.0.0.1:1234")
 CAMILLADSP_CONFIG_FILE = os.getenv("CAMILLADSP_CONFIG_FILE", "/etc/camilladsp/config.yml")

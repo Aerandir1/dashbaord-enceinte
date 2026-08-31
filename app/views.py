@@ -8,8 +8,7 @@ import struct
 import subprocess
 import threading
 import time
-import urllib.error
-import urllib.request
+import urllib.parse
 from datetime import datetime, timezone
 
 from flask import Response, jsonify, redirect, render_template, request, stream_with_context
@@ -24,7 +23,7 @@ try:
 except Exception:  # pragma: no cover
     sd = None
 
-from app import app, eq, netctl, outputs
+from app import app, airplay, eq, netctl, outputs
 from app.config import (
     ALSA_MIXER_CARD,
     ALSA_MIXER_CONTROL,
@@ -475,47 +474,10 @@ def _handle_airplay_metadata_item(item_type, item_code, payload):
 
 
 def _send_airplay_playback_command(action):
-    dacp_command = {
-        "play": "play",
-        "pause": "pause",
-        "next": "nextitem",
-        "previous": "previtem",
-        "toggle": "playpause",
-    }.get(action)
-
-    if not dacp_command:
-        return False, "Action playback AirPlay non supportee"
-
-    remote = _get_airplay_remote_snapshot()
-    client_ip = remote.get("client_ip")
-    dacp_port = remote.get("dacp_port")
-    active_remote = remote.get("active_remote")
-
-    if not client_ip or not dacp_port or not active_remote:
-        return (
-            False,
-            "Controle AirPlay indisponible: metadonnees DACP manquantes (lance une lecture AirPlay).",
-        )
-
-    host = client_ip
-    if host and ":" in host and not host.startswith("["):
-        host = f"[{host}]"
-
-    url = f"http://{host}:{dacp_port}/ctrl-int/1/{dacp_command}"
-    headers = {"Active-Remote": str(active_remote)}
-    if remote.get("dacp_id"):
-        headers["Client-Daap-Id"] = str(remote["dacp_id"])
-
-    request_obj = urllib.request.Request(url, headers=headers, method="GET")
-    try:
-        with urllib.request.urlopen(request_obj, timeout=2.0) as response:
-            if 200 <= response.status < 300:
-                return True, None
-            return False, f"Commande AirPlay refusee (HTTP {response.status})"
-    except urllib.error.URLError as exc:
-        return False, f"Impossible de joindre la telecommande AirPlay ({url}): {exc}"
-    except Exception as exc:
-        return False, f"Commande AirPlay impossible: {exc}"
+    # Controle via l'interface MPRIS de shairport-sync (voir app/airplay.py) :
+    # standard, fiable, et permis pour l'utilisateur du dashboard sur le bus
+    # systeme. Remplace l'ancienne voie DACP (port jamais publie par le tube).
+    return airplay.command(action)
 
 
 def _shairport_metadata_worker(pipe_path):
@@ -1285,14 +1247,21 @@ def _public_state():
     active_service_key = SPEAKER_STATE.get("active_service")
     spotify_metadata = _get_spotify_metadata_snapshot()
 
+    # AirPlay : metadonnees lues via MPRIS (shairport-sync). Repli sur le tube
+    # si MPRIS n'est pas disponible (vieux build sans dbus).
+    airplay_md = airplay.metadata() if active_service_key == "airplay" else None
     if active_service_key == "airplay":
-        metadata = _get_airplay_metadata_snapshot()
-        if _is_airplay_metadata_fresh(metadata):
-            current_track = metadata.get("title") or "Titre inconnu"
-            current_artist = metadata.get("artist") or "Artiste inconnu"
+        if airplay_md.get("title"):
+            current_track = airplay_md["title"]
+            current_artist = airplay_md.get("artist") or "Artiste inconnu"
         else:
-            current_track = "En attente de metadonnees AirPlay"
-            current_artist = "Demarre une lecture AirPlay"
+            fallback = _get_airplay_metadata_snapshot()
+            if _is_airplay_metadata_fresh(fallback) and fallback.get("title"):
+                current_track = fallback["title"]
+                current_artist = fallback.get("artist") or "Artiste inconnu"
+            else:
+                current_track = "En attente de métadonnées AirPlay"
+                current_artist = "Démarre une lecture AirPlay"
     elif active_service_key == "spotify":
         if spotify_metadata.get("title"):
             current_track = spotify_metadata["title"]
@@ -1311,8 +1280,13 @@ def _public_state():
         **SPEAKER_STATE,
         "current_track": current_track,
         "current_artist": current_artist,
-        "airplay_metadata": _get_airplay_metadata_snapshot(),
-        "airplay_remote": _get_airplay_remote_snapshot(),
+        "airplay_metadata": airplay_md or {"title": None, "artist": None, "album": None},
+        # URL de pochette (servie par /api/airplay/cover), avec un jeton qui
+        # change a chaque piste pour rafraichir l'image cote navigateur.
+        "airplay_cover": (
+            "/api/airplay/cover?t="
+            + urllib.parse.quote(airplay_md.get("trackid") or airplay_md.get("title") or "", safe="")
+        ) if (airplay_md and airplay_md.get("art_url")) else None,
         "spotify_metadata": spotify_metadata,
         "wifi": _get_wifi_info(),
         "outputs": outputs.list_outputs(),
@@ -1471,6 +1445,18 @@ def api_playback():
     # carte son dans _public_state().
     _touch_state()
     return jsonify(_public_state())
+
+
+@app.route("/api/airplay/cover")
+def api_airplay_cover():
+    # Sert la pochette AirPlay courante. Le chemin vient de MPRIS, jamais du
+    # client (voir app/airplay.py) : aucune traversee de repertoire possible.
+    data, mime = airplay.cover_bytes()
+    if not data:
+        return "", 404
+    response = app.response_class(data, mimetype=mime)
+    response.headers["Cache-Control"] = "public, max-age=30"
+    return response
 
 
 @app.route("/api/volume", methods=["POST"])
