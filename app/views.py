@@ -8,7 +8,6 @@ import struct
 import subprocess
 import threading
 import time
-import urllib.parse
 from datetime import datetime, timezone
 
 from flask import Response, jsonify, redirect, render_template, request, stream_with_context
@@ -1280,13 +1279,11 @@ def _public_state():
         **SPEAKER_STATE,
         "current_track": current_track,
         "current_artist": current_artist,
+        # La pochette n'est PAS mise dans l'etat : le client construit lui-meme
+        # /api/airplay/cover?t=<piste> et reessaie (shairport ecrit l'image un
+        # instant apres les metadonnees). Cela evite qu'une pochette manquante
+        # au moment du push reste absente jusqu'a un rafraichissement manuel.
         "airplay_metadata": airplay_md or {"title": None, "artist": None, "album": None},
-        # URL de pochette (servie par /api/airplay/cover), avec un jeton qui
-        # change a chaque piste pour rafraichir l'image cote navigateur.
-        "airplay_cover": (
-            "/api/airplay/cover?t="
-            + urllib.parse.quote(airplay_md.get("trackid") or airplay_md.get("title") or "", safe="")
-        ) if (airplay_md and airplay_md.get("art_url")) else None,
         "spotify_metadata": spotify_metadata,
         "wifi": _get_wifi_info(),
         "outputs": outputs.list_outputs(),

@@ -107,6 +107,56 @@ function dismissSplash() {
   setTimeout(() => document.getElementById('appSplash')?.remove(), 500);
 }
 
+// ── Pochette AirPlay ──
+// Le serveur ne renvoie pas d'URL : on la construit à partir de la piste et on
+// réessaie de la charger, car shairport écrit l'image un court instant APRÈS
+// les métadonnées. On précharge (jamais de cadre cassé) et on n'affiche que si
+// l'image se charge vraiment ; sinon on garde l'orbe.
+let _coverTrack = null;
+let _coverTimer = null;
+
+function _hideCover() {
+  const img = document.getElementById('npCover');
+  const art = document.querySelector('.np-art');
+  if (img) { img.hidden = true; img.removeAttribute('src'); }
+  if (art) art.classList.remove('has-cover');
+}
+
+function updateCover(state) {
+  const img = document.getElementById('npCover');
+  const art = document.querySelector('.np-art');
+  if (!img || !art) return;
+
+  const meta = (state.active_service === 'airplay' && state.airplay_metadata) || {};
+  const track = meta.title ? `${meta.title}|${meta.artist || ''}` : null;
+
+  if (track === _coverTrack) return; // même piste : rien à refaire
+  _coverTrack = track;
+  clearTimeout(_coverTimer);
+  _hideCover(); // nouvelle piste (ou plus d'AirPlay) : on repart de l'orbe
+
+  if (!track) return;
+
+  const url = `/api/airplay/cover?t=${encodeURIComponent(track)}`;
+  let attempts = 0;
+  const tryLoad = () => {
+    if (_coverTrack !== track) return; // piste re-changée entre-temps
+    const probe = new Image();
+    probe.onload = () => {
+      if (_coverTrack !== track) return;
+      img.src = url;
+      img.hidden = false;
+      art.classList.add('has-cover');
+    };
+    probe.onerror = () => {
+      if (_coverTrack !== track || attempts++ >= 6) return; // abandon → orbe
+      _coverTimer = setTimeout(tryLoad, 700); // pochette pas encore écrite
+    };
+    probe.src = url;
+  };
+  tryLoad();
+}
+
 function render(state) {
   if (!state) return;
 
@@ -210,20 +260,7 @@ function render(state) {
   playBtn.setAttribute('title', state.is_playing ? 'Pause' : 'Lecture');
   document.getElementById('muteBtn').textContent = state.muted ? 'Activer le son' : 'Muet';
 
-  // ── Pochette (AirPlay via MPRIS) ──
-  const npArt = document.querySelector('.np-art');
-  const npCover = document.getElementById('npCover');
-  if (npArt && npCover) {
-    if (state.airplay_cover) {
-      if (npCover.getAttribute('src') !== state.airplay_cover) npCover.src = state.airplay_cover;
-      npCover.hidden = false;
-      npArt.classList.add('has-cover');
-    } else {
-      npCover.hidden = true;
-      npCover.removeAttribute('src');
-      npArt.classList.remove('has-cover');
-    }
-  }
+  updateCover(state);
 
   // Premier rendu réussi : on peut effacer l'écran de chargement.
   dismissSplash();

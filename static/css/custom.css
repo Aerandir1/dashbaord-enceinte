@@ -300,10 +300,13 @@ body[data-theme="light"] .source-selector { background: rgba(120, 120, 160, 0.10
 
 /* ── Now Playing (héro) ───────────────────────────────────────────────────── */
 .np-panel { display: flex; flex-direction: column; gap: 16px; }
+/* Pochette / visuel toujours CARRÉ (1:1), centré — comme toute appli musicale. */
 .np-art {
   position: relative;
-  flex: 1 1 auto;
-  min-height: 200px;
+  width: 100%;
+  max-width: 340px;
+  margin: 2px auto 0;
+  aspect-ratio: 1 / 1;
   border-radius: 18px;
   overflow: hidden;
   display: grid; place-items: center;
@@ -313,6 +316,8 @@ body[data-theme="light"] .source-selector { background: rgba(120, 120, 160, 0.10
     rgba(0, 0, 0, 0.22);
   border: 1px solid var(--glass-border);
 }
+/* Contrôles poussés en bas de la carte héros (qui est plus haute). */
+.np-panel .controls { margin-top: auto; }
 .np-orb {
   width: 116px; height: 116px; border-radius: 50%;
   background: conic-gradient(from 210deg, #4f8cff, #9b6bff, #ff8fb1, #4f8cff);

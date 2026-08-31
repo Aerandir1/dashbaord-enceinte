@@ -122,13 +122,28 @@ def command(action):
     return True, None
 
 
+def _art_url_fresh():
+    """Chemin de la pochette lu a l'instant (sans cache).
+
+    shairport ecrit le fichier de pochette juste APRES les metadonnees : lire
+    frais evite de servir la pochette de la piste precedente pendant la
+    transition.
+    """
+    try:
+        meta = _get_property(PLAYER_IFACE, "Metadata", timeout=3) or {}
+    except (AirplayError, ValueError, OSError, subprocess.SubprocessError):
+        return None
+    entry = meta.get("mpris:artUrl") if isinstance(meta, dict) else None
+    return entry.get("data") if isinstance(entry, dict) else None
+
+
 def cover_bytes():
     """Octets de la pochette courante + type MIME, ou (None, None).
 
     Le chemin provient de MPRIS (mpris:artUrl), JAMAIS du client : aucune
     traversee de repertoire possible.
     """
-    art = metadata().get("art_url") or ""
+    art = _art_url_fresh() or ""
     if not art.startswith("file://"):
         return None, None
     path = unquote(urlparse(art).path)
