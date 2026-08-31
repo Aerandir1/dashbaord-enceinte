@@ -30,5 +30,12 @@ Fichiers clefs : app/netctl.py, app/views.py (routes), static/js/settings.js,
 templates/setup.html, deploy/enceinte-netctl (helper root), deploy/dashboard-
 sudoers, deploy/enceinte-hotspot.{sh,service}, deploy/dnsmasq-captive.conf.
 
+PROCHAINE ETAPE (demandee) : integrer PROPREMENT les metadonnees AirPlay.
+   - shairport-sync est prevu pour ca (pipe/UDP de metadonnees + hook).
+     Ref : https://github.com/mikebrady/shairport-sync
+   - Deja en place : lecture du pipe (_get_airplay_metadata_snapshot dans
+     app/views.py, SHAIRPORT_METADATA_PIPE). A fiabiliser : titre/artiste/album
+     + pochette, fraicheur, et remontee propre dans la carte "En lecture".
+
 PISTE FUTURE (non fait) : brancher Music Assistant / Squeezelite comme vraie
 source backend (aujourd'hui juste annoncee "Bientot" dans le selecteur).

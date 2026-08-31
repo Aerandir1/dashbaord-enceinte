@@ -151,15 +151,22 @@
         </div>
       </article>
 
-      <article class="panel">
+      <article class="panel volume-panel">
         <h2>Volume</h2>
-        <div class="volume-row">
-          <button class="btn icon-btn" id="volDown" aria-label="Baisser le volume">−</button>
-          <input id="volumeSlider" type="range" min="0" max="100" value="{{ state.volume }}">
-          <button class="btn icon-btn" id="volUp" aria-label="Monter le volume">+</button>
+        <div class="vol-gauge">
+          <input id="volumeSlider" type="range" min="0" max="100" value="{{ state.volume }}"
+                 orient="vertical" aria-label="Volume" aria-orientation="vertical">
+          <svg class="vol-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 9v6h4l5 5V4L8 9H4z" fill="currentColor"/>
+            <path d="M16 8.8a4 4 0 0 1 0 6.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
         </div>
-        <p>Volume : <strong id="volumeValue">{{ state.volume }}</strong> %</p>
-        <button class="btn" id="muteBtn">{{ 'Activer le son' if state.muted else 'Muet' }}</button>
+        <p class="vol-readout"><strong id="volumeValue">{{ state.volume }}</strong><span>%</span></p>
+        <div class="vol-actions">
+          <button class="btn icon-btn" id="volDown" aria-label="Baisser le volume">−</button>
+          <button class="btn icon-btn" id="volUp" aria-label="Monter le volume">+</button>
+          <button class="btn" id="muteBtn">{{ 'Activer le son' if state.muted else 'Muet' }}</button>
+        </div>
       </article>
 
       <article class="panel">

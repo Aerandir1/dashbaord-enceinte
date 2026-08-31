@@ -347,31 +347,54 @@ body.is-playing .np-ring { animation: ringPulse 3.4s ease-in-out infinite; }
 .controls { display: flex; align-items: center; gap: 12px; }
 #playBtn { width: 56px; min-width: 56px; height: 56px; font-size: 1.4rem; }
 
-/* ── Volume ───────────────────────────────────────────────────────────────── */
-.volume-row { display: flex; align-items: center; gap: 12px; }
-input[type="range"] {
+/* ── Volume : jauge verticale (façon Centre de contrôle Apple) ────────────── */
+.volume-panel { display: flex; flex-direction: column; align-items: center; }
+.volume-panel h2 { align-self: flex-start; }
+.vol-gauge { position: relative; width: 68px; height: 216px; margin: 4px 0 2px; }
+
+/* La barre EST le contrôle : pas de poignée, on remplit par le bas jusqu'à la
+   valeur, et on glisse le long de la colonne. */
+#volumeSlider {
   -webkit-appearance: none; appearance: none;
-  flex: 1 1 auto; height: 8px; border-radius: 999px;
+  writing-mode: vertical-lr;      /* orientation verticale (standard moderne) */
+  direction: rtl;                 /* 0 en bas, 100 en haut */
+  width: 68px; height: 216px;
+  margin: 0; padding: 0;
+  border-radius: 24px;
   background:
-    linear-gradient(120deg, #4f8cff, #9b6bff) 0 / var(--val, 42%) 100% no-repeat,
-    rgba(255, 255, 255, 0.12);
+    linear-gradient(to top, #ffffff 0 var(--val, 42%), rgba(255, 255, 255, 0.13) var(--val, 42%) 100%);
+  box-shadow: inset 0 0 0 1px var(--glass-border), inset 0 3px 10px rgba(0, 0, 0, 0.35);
   cursor: pointer;
+  overflow: hidden;
 }
-input[type="range"]::-webkit-slider-thumb {
+body[data-theme="light"] #volumeSlider {
+  background:
+    linear-gradient(to top, #4f7bff 0 var(--val, 42%), rgba(80, 90, 140, 0.18) var(--val, 42%) 100%);
+}
+/* Poignée invisible mais saisissable sur toute l'épaisseur. */
+#volumeSlider::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
-  width: 20px; height: 20px; border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 0 4px rgba(124, 108, 255, 0.35);
-  border: 0;
+  width: 68px; height: 8px; background: transparent; border: 0;
 }
-input[type="range"]::-moz-range-thumb {
-  width: 20px; height: 20px; border-radius: 50%; border: 0;
-  background: #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 0 4px rgba(124, 108, 255, 0.35);
+#volumeSlider::-moz-range-thumb { width: 68px; height: 8px; background: transparent; border: 0; }
+#volumeSlider::-moz-range-track { background: transparent; }
+#volumeSlider:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* Icône haut-parleur au fond de la jauge, lisible sur le remplissage. */
+.vol-icon {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  width: 24px; height: 24px; pointer-events: none;
+  color: rgba(30, 34, 60, 0.62);
 }
-#volumeValue {
+body[data-theme="light"] .vol-icon { color: rgba(255, 255, 255, 0.85); }
+
+.vol-readout { margin: 6px 0 14px; }
+.vol-readout strong {
   font-family: "Space Grotesk", system-ui, sans-serif;
-  font-weight: 600; font-variant-numeric: tabular-nums;
+  font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums;
 }
+.vol-readout span { color: var(--muted); margin-left: 3px; }
+.vol-actions { display: flex; align-items: center; gap: 8px; }
 .panel > p { color: var(--muted); font-size: 0.9rem; }
 
 /* ── Égaliseur ────────────────────────────────────────────────────────────── */
