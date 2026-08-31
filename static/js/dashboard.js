@@ -116,7 +116,12 @@ function render(state) {
   document.getElementById('trackName').textContent = state.current_track;
   document.getElementById('artistName').textContent = state.current_artist;
   document.getElementById('volumeValue').textContent = state.volume;
-  document.getElementById('volumeSlider').value = state.volume;
+  const volumeSlider = document.getElementById('volumeSlider');
+  volumeSlider.value = state.volume;
+  // Remplit la piste jusqu'à la valeur (dégradé côté CSS).
+  volumeSlider.style.setProperty('--val', `${state.volume}%`);
+  // L'aurore et l'orbe "respirent" uniquement quand ça joue réellement.
+  document.body.classList.toggle('is-playing', Boolean(state.is_playing));
   // ── Wi-Fi (donnees reelles : /proc/net/wireless + nmcli) ──
   const wifi = state.wifi || {};
   document.getElementById('wifiSsid').textContent = wifi.ssid || 'Non connecté';
@@ -237,6 +242,11 @@ document.getElementById('volDown').addEventListener('click', async () => {
 document.getElementById('volUp').addEventListener('click', async () => {
   const state = await callApi('/api/volume', { delta: 5 });
   render(state);
+});
+
+// Remplissage live pendant le glissement (avant l'envoi, qui se fait au relâché).
+document.getElementById('volumeSlider').addEventListener('input', (event) => {
+  event.target.style.setProperty('--val', `${event.target.value}%`);
 });
 
 document.getElementById('volumeSlider').addEventListener('change', async (event) => {

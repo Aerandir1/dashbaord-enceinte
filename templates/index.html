@@ -13,7 +13,7 @@
       position: fixed; inset: 0; z-index: 9999;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 1.4rem;
-      background: #0d1117; color: #e6edf3;
+      background: #0c0c1b; color: #f2f3fb;
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       transition: opacity .45s ease, visibility .45s ease;
     }
@@ -37,9 +37,10 @@
     body.is-ready #appSplash { opacity: 0; visibility: hidden; pointer-events: none; }
     @media (prefers-reduced-motion: reduce) { #appSplash .splash-bar { animation: none; } }
     @media (prefers-color-scheme: light) {
-      #appSplash { background: #f6f8fa; color: #1f2328; }
+      #appSplash { background: #f4f5fc; color: #14162b; }
     }
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='fonts/fonts.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
 </head>
 <body data-theme="dark">
@@ -53,9 +54,19 @@
   </div>
   <main class="dashboard">
     <header class="panel">
-      <div>
-        <h1>Dashboard</h1>
-        <p id="deviceLine">{{ state.device_name }} · {{ state.room }}</p>
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <rect x="3"  y="9"  width="3" height="6"  rx="1.5" fill="#fff"/>
+            <rect x="8"  y="4"  width="3" height="16" rx="1.5" fill="#fff"/>
+            <rect x="13" y="7"  width="3" height="10" rx="1.5" fill="#fff"/>
+            <rect x="18" y="10" width="3" height="4"  rx="1.5" fill="#fff"/>
+          </svg>
+        </span>
+        <div>
+          <h1>Enceinte</h1>
+          <p id="deviceLine">{{ state.device_name }} · {{ state.room }}</p>
+        </div>
       </div>
       <div class="header-actions">
         <button id="themeToggle" class="btn ghost" aria-label="Activer le thème clair">🌙 Nuit</button>
@@ -120,77 +131,35 @@
         </p>
       </article>
 
-      <article class="panel">
-        <h2>Lecture</h2>
-        <p class="field-label">Source: <strong id="playbackSource">{{ state.active_service_name }}</strong></p>
-        <p class="track" id="trackName">{{ state.current_track }}</p>
-        <p class="artist" id="artistName">{{ state.current_artist }}</p>
+      <article class="panel panel--hero np-panel">
+        <span class="eyebrow">En lecture</span>
+        <div class="np-art" aria-hidden="true">
+          <span class="np-ring"></span>
+          <span class="np-orb"></span>
+        </div>
+        <div class="np-meta">
+          <p class="track" id="trackName">{{ state.current_track }}</p>
+          <p class="artist" id="artistName">{{ state.current_artist }}</p>
+          <p class="np-source">Source : <strong id="playbackSource">{{ state.active_service_name }}</strong></p>
+        </div>
         <div class="controls">
-          <button class="btn" data-playback="previous">⏮</button>
+          <button class="btn icon-btn" data-playback="previous" aria-label="Précédent">⏮</button>
           <button class="btn primary icon-btn" id="playBtn" data-playback="toggle" aria-label="Lecture/Pause">
             {{ '⏸' if state.is_playing else '▶' }}
           </button>
-          <button class="btn" data-playback="next">⏭</button>
+          <button class="btn icon-btn" data-playback="next" aria-label="Suivant">⏭</button>
         </div>
       </article>
 
       <article class="panel">
         <h2>Volume</h2>
         <div class="volume-row">
-          <button class="btn" id="volDown">-</button>
+          <button class="btn icon-btn" id="volDown" aria-label="Baisser le volume">−</button>
           <input id="volumeSlider" type="range" min="0" max="100" value="{{ state.volume }}">
-          <button class="btn" id="volUp">+</button>
+          <button class="btn icon-btn" id="volUp" aria-label="Monter le volume">+</button>
         </div>
-        <p>Volume: <strong id="volumeValue">{{ state.volume }}</strong>%</p>
+        <p>Volume : <strong id="volumeValue">{{ state.volume }}</strong> %</p>
         <button class="btn" id="muteBtn">{{ 'Activer le son' if state.muted else 'Muet' }}</button>
-      </article>
-
-      <article class="panel eq-panel">
-        <div class="eq-head">
-          <h2>Égaliseur</h2>
-          <div class="eq-head-actions">
-            <label class="eq-check">
-              <input type="checkbox" id="eqAutoPreamp" checked>
-              <span>Préampli auto <strong id="eqPreamp">0.0 dB</strong></span>
-            </label>
-            <button type="button" class="btn ghost" id="eqFlat">Aplatir</button>
-          </div>
-        </div>
-
-        <canvas id="eqCanvas" aria-label="Courbe de réponse de l'égaliseur"></canvas>
-        <p class="eq-hint">
-          Glisse un point pour la fréquence et le gain · molette pour la largeur (Q)
-          · double-clic pour ajouter une bande · Suppr pour l'enlever
-        </p>
-
-        <div class="eq-inspector is-empty" id="eqInspector">
-          <div class="eq-field">
-            <label for="eqType">Type</label>
-            <select id="eqType" class="select"></select>
-          </div>
-          <div class="eq-field">
-            <label for="eqFreq">Fréquence</label>
-            <div class="eq-input"><input id="eqFreq" type="number" min="20" max="20000" step="1"><span>Hz</span></div>
-          </div>
-          <div class="eq-field" id="eqGainRow">
-            <label for="eqGain">Gain</label>
-            <div class="eq-input"><input id="eqGain" type="number" min="-24" max="24" step="0.5"><span>dB</span></div>
-          </div>
-          <div class="eq-field">
-            <label for="eqQ">Largeur (Q)</label>
-            <div class="eq-input"><input id="eqQ" type="number" min="0.1" max="10" step="0.05"></div>
-          </div>
-          <div class="eq-field eq-field-actions">
-            <label class="eq-check">
-              <input type="checkbox" id="eqEnabled" checked>
-              <span>Activée</span>
-            </label>
-            <button type="button" class="btn ghost" id="eqAdd">Ajouter</button>
-            <button type="button" class="btn ghost" id="eqRemove">Supprimer</button>
-          </div>
-        </div>
-
-        <p class="eq-status" id="eqStatus"></p>
       </article>
 
       <article class="panel">
@@ -253,6 +222,54 @@
           </li>
           <li><span>Dernière mise à jour</span> <strong id="updatedAt">{{ state.updated_since }}</strong></li>
         </ul>
+      </article>
+
+      <article class="panel eq-panel">
+        <div class="eq-head">
+          <h2>Égaliseur</h2>
+          <div class="eq-head-actions">
+            <label class="eq-check">
+              <input type="checkbox" id="eqAutoPreamp" checked>
+              <span>Préampli auto <strong id="eqPreamp">0.0 dB</strong></span>
+            </label>
+            <button type="button" class="btn ghost" id="eqFlat">Aplatir</button>
+          </div>
+        </div>
+
+        <canvas id="eqCanvas" aria-label="Courbe de réponse de l'égaliseur"></canvas>
+        <p class="eq-hint">
+          Glisse un point pour la fréquence et le gain · molette pour la largeur (Q)
+          · double-clic pour ajouter une bande · Suppr pour l'enlever
+        </p>
+
+        <div class="eq-inspector is-empty" id="eqInspector">
+          <div class="eq-field">
+            <label for="eqType">Type</label>
+            <select id="eqType" class="select"></select>
+          </div>
+          <div class="eq-field">
+            <label for="eqFreq">Fréquence</label>
+            <div class="eq-input"><input id="eqFreq" type="number" min="20" max="20000" step="1"><span>Hz</span></div>
+          </div>
+          <div class="eq-field" id="eqGainRow">
+            <label for="eqGain">Gain</label>
+            <div class="eq-input"><input id="eqGain" type="number" min="-24" max="24" step="0.5"><span>dB</span></div>
+          </div>
+          <div class="eq-field">
+            <label for="eqQ">Largeur (Q)</label>
+            <div class="eq-input"><input id="eqQ" type="number" min="0.1" max="10" step="0.05"></div>
+          </div>
+          <div class="eq-field eq-field-actions">
+            <label class="eq-check">
+              <input type="checkbox" id="eqEnabled" checked>
+              <span>Activée</span>
+            </label>
+            <button type="button" class="btn ghost" id="eqAdd">Ajouter</button>
+            <button type="button" class="btn ghost" id="eqRemove">Supprimer</button>
+          </div>
+        </div>
+
+        <p class="eq-status" id="eqStatus"></p>
       </article>
 
       <article class="panel settings-panel">
