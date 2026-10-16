@@ -317,6 +317,17 @@
     return bands.find((b) => b.id === selectedId) || null;
   }
 
+  function bandColor(band) {
+    const index = bands.indexOf(band);
+    return BAND_COLORS[(index < 0 ? 0 : index) % BAND_COLORS.length];
+  }
+
+  function formatFreq(freq) {
+    if (freq >= 10000) return `${(freq / 1000).toFixed(1)}k`;
+    if (freq >= 1000) return `${(freq / 1000).toFixed(2)}k`;
+    return `${Math.round(freq)}`;
+  }
+
   function updateReadout() {
     const band = selected();
     const panel = document.getElementById('eqInspector');
@@ -326,27 +337,222 @@
     const preampEl = document.getElementById('eqPreamp');
     if (preampEl) preampEl.textContent = `${preampApplied > 0 ? '+' : ''}${preampApplied.toFixed(1)} dB`;
 
+    renderBandChips();
     if (!band) return;
 
-    const typeEl = document.getElementById('eqType');
-    if (typeEl) typeEl.value = band.type;
+    panel.style.setProperty('--band', bandColor(band));
+    panel.classList.toggle('is-bypassed', !band.enabled);
+
+    document.querySelectorAll('#eqTypes .eq-shape').forEach((btn) => {
+      const on = btn.dataset.type === band.type;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
 
     const hasGain = TYPES_WITH_GAIN.includes(band.type);
     const gainRow = document.getElementById('eqGainRow');
-    if (gainRow) gainRow.style.display = hasGain ? '' : 'none';
+    if (gainRow) gainRow.classList.toggle('is-disabled', !hasGain);
 
-    setField('eqFreq', Math.round(band.freq));
-    setField('eqGain', band.gain.toFixed(1));
+    setField('eqFreq', formatFreq(band.freq));
+    setField('eqGain', `${band.gain > 0 ? '+' : ''}${band.gain.toFixed(1)}`);
     setField('eqQ', band.q.toFixed(2));
 
-    const enabledEl = document.getElementById('eqEnabled');
-    if (enabledEl) enabledEl.checked = band.enabled;
+    const power = document.getElementById('eqPower');
+    if (power) power.setAttribute('aria-pressed', band.enabled ? 'true' : 'false');
+
+    knobDials.forEach(updateKnob);
   }
 
   function setField(id, value) {
     const el = document.getElementById(id);
     if (el && document.activeElement !== el) el.value = value;
   }
+
+  // ── Barre des bandes ─────────────────────────────────────────────────────
+  function renderBandChips() {
+    const wrap = document.getElementById('eqBands');
+    if (!wrap) return;
+    const addBtn = document.getElementById('eqAdd');
+    wrap.querySelectorAll('.eq-band-chip').forEach((n) => n.remove());
+    bands.forEach((band, index) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'eq-band-chip';
+      chip.style.setProperty('--band', bandColor(band));
+      chip.classList.toggle('is-selected', band.id === selectedId);
+      chip.classList.toggle('is-off', !band.enabled);
+      chip.setAttribute('aria-pressed', band.id === selectedId ? 'true' : 'false');
+      chip.title = `${TYPE_LABELS[band.type]} · ${formatFreq(band.freq)} Hz`;
+      chip.innerHTML = `<span class="eq-band-num">${index + 1}</span><span class="eq-band-freq">${formatFreq(band.freq)}</span>`;
+      chip.addEventListener('click', () => {
+        selectedId = band.id;
+        updateReadout();
+        draw();
+      });
+      wrap.insertBefore(chip, addBtn);
+    });
+  }
+
+  // ── Potentiomètres ───────────────────────────────────────────────────────
+  // Course de 270° comme un potard physique ; fréquence et Q suivent une
+  // échelle logarithmique, le gain est bipolaire (arc partant du zénith).
+  const KNOB_SWEEP = 135;
+  const KNOBS = {
+    freq: { min: FREQ_MIN, max: FREQ_MAX, log: true, def: 1000, round: (v) => Math.round(v) },
+    gain: { min: -24, max: 24, log: false, bipolar: true, def: 0, round: (v) => Math.round(v * 10) / 10 },
+    q: { min: 0.1, max: 10, log: true, def: 1, round: (v) => Math.round(v * 100) / 100 }
+  };
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const knobDials = Array.from(document.querySelectorAll('.knob-dial[data-param]'));
+
+  function clamp01(t) { return Math.min(1, Math.max(0, t)); }
+  function toNorm(spec, v) {
+    return clamp01(spec.log
+      ? Math.log(v / spec.min) / Math.log(spec.max / spec.min)
+      : (v - spec.min) / (spec.max - spec.min));
+  }
+  function fromNorm(spec, t) {
+    t = clamp01(t);
+    return spec.log ? spec.min * Math.pow(spec.max / spec.min, t) : spec.min + t * (spec.max - spec.min);
+  }
+  function normToAngle(t) { return -KNOB_SWEEP + t * 2 * KNOB_SWEEP; }
+
+  function polar(deg, r) {
+    const a = ((deg - 90) * Math.PI) / 180;
+    return [50 + r * Math.cos(a), 50 + r * Math.sin(a)];
+  }
+  function arcPath(from, to, r) {
+    if (Math.abs(to - from) < 0.5) return '';
+    const [x0, y0] = polar(from, r);
+    const [x1, y1] = polar(to, r);
+    const large = Math.abs(to - from) > 180 ? 1 : 0;
+    const sweep = to > from ? 1 : 0;
+    return `M${x0.toFixed(2)} ${y0.toFixed(2)} A${r} ${r} 0 ${large} ${sweep} ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+  }
+
+  function buildKnob(dial) {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.classList.add('knob-ring');
+
+    for (let i = 0; i <= 10; i += 1) {
+      const angle = normToAngle(i / 10);
+      const [x0, y0] = polar(angle, 45.5);
+      const [x1, y1] = polar(angle, i % 5 === 0 ? 49.5 : 48);
+      const tick = document.createElementNS(SVG_NS, 'line');
+      tick.setAttribute('x1', x0); tick.setAttribute('y1', y0);
+      tick.setAttribute('x2', x1); tick.setAttribute('y2', y1);
+      tick.classList.add('knob-tick');
+      svg.appendChild(tick);
+    }
+
+    const track = document.createElementNS(SVG_NS, 'path');
+    track.setAttribute('d', arcPath(-KNOB_SWEEP, KNOB_SWEEP, 40));
+    track.classList.add('knob-track');
+    const value = document.createElementNS(SVG_NS, 'path');
+    value.classList.add('knob-arc');
+    svg.append(track, value);
+
+    const cap = document.createElement('div');
+    cap.className = 'knob-cap';
+    dial.append(svg, cap);
+    dial._arc = value;
+    dial._cap = cap;
+  }
+
+  function updateKnob(dial) {
+    const band = selected();
+    if (!band) return;
+    const spec = KNOBS[dial.dataset.param];
+    const v = band[dial.dataset.param];
+    const angle = normToAngle(toNorm(spec, v));
+    const origin = spec.bipolar ? 0 : -KNOB_SWEEP;
+    dial._arc.setAttribute('d', arcPath(Math.min(origin, angle), Math.max(origin, angle), 40));
+    dial._cap.style.setProperty('--angle', `${angle}deg`);
+    dial.setAttribute('aria-valuemin', spec.min);
+    dial.setAttribute('aria-valuemax', spec.max);
+    dial.setAttribute('aria-valuenow', v);
+  }
+
+  function knobEnabled(dial) {
+    const band = selected();
+    return Boolean(band) && (dial.dataset.param !== 'gain' || TYPES_WITH_GAIN.includes(band.type));
+  }
+
+  function setKnobNorm(dial, t) {
+    const band = selected();
+    const spec = KNOBS[dial.dataset.param];
+    const next = spec.round(fromNorm(spec, t));
+    if (next === band[dial.dataset.param]) return;
+    band[dial.dataset.param] = next;
+    updateReadout();
+    draw();
+    scheduleSend();
+  }
+
+  function nudgeKnob(dial, delta) {
+    const band = selected();
+    setKnobNorm(dial, toNorm(KNOBS[dial.dataset.param], band[dial.dataset.param]) + delta);
+  }
+
+  knobDials.forEach((dial) => {
+    buildKnob(dial);
+    let lastY = null;
+    let norm = 0;
+
+    dial.addEventListener('pointerdown', (event) => {
+      if (!knobEnabled(dial) || event.button > 0) return;
+      event.preventDefault();
+      dial.focus({ preventScroll: true });
+      dial.setPointerCapture(event.pointerId);
+      dial.classList.add('is-turning');
+      lastY = event.clientY;
+      norm = toNorm(KNOBS[dial.dataset.param], selected()[dial.dataset.param]);
+    });
+    dial.addEventListener('pointermove', (event) => {
+      if (lastY === null) return;
+      // ~220 px pour toute la course ; Maj : réglage fin, cinq fois plus lent.
+      norm = clamp01(norm + (lastY - event.clientY) / (event.shiftKey ? 1100 : 220));
+      lastY = event.clientY;
+      setKnobNorm(dial, norm);
+    });
+    const release = (event) => {
+      if (lastY === null) return;
+      lastY = null;
+      dial.classList.remove('is-turning');
+      try { dial.releasePointerCapture(event.pointerId); } catch (_) { /* déjà relâché */ }
+    };
+    dial.addEventListener('pointerup', release);
+    dial.addEventListener('pointercancel', release);
+
+    dial.addEventListener('dblclick', () => {
+      if (!knobEnabled(dial)) return;
+      const spec = KNOBS[dial.dataset.param];
+      setKnobNorm(dial, toNorm(spec, spec.def));
+    });
+
+    dial.addEventListener('wheel', (event) => {
+      if (!knobEnabled(dial)) return;
+      event.preventDefault();
+      nudgeKnob(dial, (event.deltaY < 0 ? 1 : -1) * (event.shiftKey ? 0.002 : 0.012));
+    }, { passive: false });
+
+    dial.addEventListener('keydown', (event) => {
+      if (!knobEnabled(dial)) return;
+      const fine = event.shiftKey ? 0.2 : 1;
+      const steps = {
+        ArrowUp: 0.01 * fine, ArrowRight: 0.01 * fine,
+        ArrowDown: -0.01 * fine, ArrowLeft: -0.01 * fine,
+        PageUp: 0.1, PageDown: -0.1
+      };
+      if (event.key in steps) nudgeKnob(dial, steps[event.key]);
+      else if (event.key === 'Home') setKnobNorm(dial, 0);
+      else if (event.key === 'End') setKnobNorm(dial, 1);
+      else return;
+      event.preventDefault();
+    });
+  });
 
   // ── Interactions ─────────────────────────────────────────────────────────
   function pointerPos(event) {
@@ -455,67 +661,90 @@
 
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Delete' && event.key !== 'Backspace') return;
-    if (document.activeElement && /input|select|textarea/i.test(document.activeElement.tagName)) return;
+    const active = document.activeElement;
+    if (active && (/input|select|textarea/i.test(active.tagName) || active.classList.contains('knob-dial'))) return;
     if (!selected()) return;
     event.preventDefault();
     removeSelected();
   });
 
   // ── Champs de l'inspecteur ───────────────────────────────────────────────
+  // Valeur appliquée à la validation (Entrée ou perte du focus) : appliquer
+  // à chaque frappe ferait sauter le filtre à 20 Hz en tapant « 1500 ».
   function bindField(id, apply) {
     const el = document.getElementById(id);
     if (!el) return;
-    el.addEventListener('input', () => {
-      const band = selected();
-      if (!band) return;
-      apply(band, el.value);
-      draw();
-      scheduleSend();
+    el.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') el.blur();
+      if (event.key === 'Escape') { el.value = ''; el.blur(); }
     });
+    el.addEventListener('change', () => {
+      const band = selected();
+      if (band) {
+        apply(band, el.value.trim().replace(',', '.'));
+        draw();
+        scheduleSend();
+      }
+    });
+    el.addEventListener('blur', updateReadout);
+    el.addEventListener('focus', () => el.select());
   }
 
   bindField('eqFreq', (band, value) => {
-    const v = Number(value);
-    if (Number.isFinite(v)) band.freq = Math.min(20000, Math.max(20, v));
+    const match = /^([\d.]+)\s*(k?)/i.exec(value);
+    const v = match ? Number(match[1]) * (match[2] ? 1000 : 1) : NaN;
+    if (Number.isFinite(v)) band.freq = Math.min(20000, Math.max(20, Math.round(v)));
   });
   bindField('eqGain', (band, value) => {
-    const v = Number(value);
+    const v = parseFloat(value);
     if (Number.isFinite(v)) band.gain = Math.min(24, Math.max(-24, v));
   });
   bindField('eqQ', (band, value) => {
-    const v = Number(value);
+    const v = parseFloat(value);
     if (Number.isFinite(v)) band.q = Math.min(10, Math.max(0.1, v));
   });
 
-  const typeSelect = document.getElementById('eqType');
-  if (typeSelect) {
+  // Sélecteur de forme : une icône par type de filtre.
+  const SHAPE_ICONS = {
+    Peaking: 'M1 11C7 11 9 3 12 3s5 8 11 8',
+    Lowshelf: 'M1 4h5c4 0 6 7 10 7h7',
+    Highshelf: 'M1 11h7c4 0 6-7 10-7h5',
+    Highpass: 'M1 13c3 0 5-9 9-9h13',
+    Lowpass: 'M1 4h13c4 0 6 9 9 9',
+    Notch: 'M1 5h8c2 0 2 8 3 8s1-8 3-8h8'
+  };
+  const typeGroup = document.getElementById('eqTypes');
+  if (typeGroup) {
     Object.entries(TYPE_LABELS).forEach(([value, label]) => {
-      const option = document.createElement('option');
-      option.value = value;
-      option.textContent = label;
-      typeSelect.appendChild(option);
-    });
-    typeSelect.addEventListener('change', () => {
-      const band = selected();
-      if (!band) return;
-      band.type = typeSelect.value;
-      if (!TYPES_WITH_GAIN.includes(band.type)) band.gain = 0;
-      updateReadout();
-      draw();
-      scheduleSend();
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'eq-shape';
+      btn.dataset.type = value;
+      btn.title = label;
+      btn.setAttribute('role', 'radio');
+      btn.setAttribute('aria-label', label);
+      btn.innerHTML = `<svg viewBox="0 0 24 16" aria-hidden="true"><path d="${SHAPE_ICONS[value]}"/></svg>`;
+      btn.addEventListener('click', () => {
+        const band = selected();
+        if (!band) return;
+        band.type = value;
+        if (!TYPES_WITH_GAIN.includes(band.type)) band.gain = 0;
+        updateReadout();
+        draw();
+        scheduleSend();
+      });
+      typeGroup.appendChild(btn);
     });
   }
 
-  const enabledToggle = document.getElementById('eqEnabled');
-  if (enabledToggle) {
-    enabledToggle.addEventListener('change', () => {
-      const band = selected();
-      if (!band) return;
-      band.enabled = enabledToggle.checked;
-      draw();
-      scheduleSend();
-    });
-  }
+  document.getElementById('eqPower')?.addEventListener('click', () => {
+    const band = selected();
+    if (!band) return;
+    band.enabled = !band.enabled;
+    updateReadout();
+    draw();
+    scheduleSend();
+  });
 
   document.getElementById('eqAdd')?.addEventListener('click', () => addBand(1000, 0));
   document.getElementById('eqRemove')?.addEventListener('click', removeSelected);

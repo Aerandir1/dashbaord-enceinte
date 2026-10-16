@@ -246,34 +246,41 @@
 
         <canvas id="eqCanvas" aria-label="Courbe de réponse de l'égaliseur"></canvas>
         <p class="eq-hint">
-          Glisse un point pour la fréquence et le gain · molette pour la largeur (Q)
-          · double-clic pour ajouter une bande · Suppr pour l'enlever
+          Glisse un point pour la fréquence et le gain · double-clic pour ajouter une bande.
+          Potards : glisser vers le haut / bas, Maj = réglage fin, double-clic = valeur par défaut.
         </p>
 
+        <div class="eq-bands" id="eqBands" aria-label="Bandes">
+          <button type="button" class="eq-band-add" id="eqAdd" title="Ajouter une bande" aria-label="Ajouter une bande">+</button>
+        </div>
+
         <div class="eq-inspector is-empty" id="eqInspector">
-          <div class="eq-field">
-            <label for="eqType">Type</label>
-            <select id="eqType" class="select"></select>
+          <div class="eq-rack-side">
+            <div class="eq-shapes" id="eqTypes" role="radiogroup" aria-label="Forme du filtre"></div>
+            <div class="eq-rack-actions">
+              <button type="button" class="eq-power" id="eqPower" aria-pressed="true" title="Activer / contourner la bande" aria-label="Activer la bande">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v8M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>
+              </button>
+              <button type="button" class="btn ghost" id="eqRemove">Supprimer</button>
+            </div>
           </div>
-          <div class="eq-field">
-            <label for="eqFreq">Fréquence</label>
-            <div class="eq-input"><input id="eqFreq" type="number" min="20" max="20000" step="1"><span>Hz</span></div>
-          </div>
-          <div class="eq-field" id="eqGainRow">
-            <label for="eqGain">Gain</label>
-            <div class="eq-input"><input id="eqGain" type="number" min="-24" max="24" step="0.5"><span>dB</span></div>
-          </div>
-          <div class="eq-field">
-            <label for="eqQ">Largeur (Q)</label>
-            <div class="eq-input"><input id="eqQ" type="number" min="0.1" max="10" step="0.05"></div>
-          </div>
-          <div class="eq-field eq-field-actions">
-            <label class="eq-check">
-              <input type="checkbox" id="eqEnabled" checked>
-              <span>Activée</span>
-            </label>
-            <button type="button" class="btn ghost" id="eqAdd">Ajouter</button>
-            <button type="button" class="btn ghost" id="eqRemove">Supprimer</button>
+
+          <div class="eq-knobs">
+            <div class="knob">
+              <span class="knob-label">Fréquence</span>
+              <div class="knob-dial" data-param="freq" tabindex="0" role="slider" aria-label="Fréquence"></div>
+              <div class="knob-value"><input id="eqFreq" type="text" inputmode="decimal" autocomplete="off" aria-label="Fréquence en hertz"><span>Hz</span></div>
+            </div>
+            <div class="knob" id="eqGainRow">
+              <span class="knob-label">Gain</span>
+              <div class="knob-dial" data-param="gain" tabindex="0" role="slider" aria-label="Gain"></div>
+              <div class="knob-value"><input id="eqGain" type="text" inputmode="decimal" autocomplete="off" aria-label="Gain en décibels"><span>dB</span></div>
+            </div>
+            <div class="knob">
+              <span class="knob-label">Largeur Q</span>
+              <div class="knob-dial" data-param="q" tabindex="0" role="slider" aria-label="Largeur Q"></div>
+              <div class="knob-value"><input id="eqQ" type="text" inputmode="decimal" autocomplete="off" aria-label="Facteur Q"></div>
+            </div>
           </div>
         </div>
 
