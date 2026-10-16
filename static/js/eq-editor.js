@@ -262,6 +262,55 @@
       }
       ctx.globalAlpha = 1;
     });
+
+    positionInspector();
+  }
+
+  // ── Panneau flottant ─────────────────────────────────────────────────────
+  // Comme dans un EQ de studio, les réglages de la bande sélectionnée
+  // flottent à côté de son point. En dessous de FLOAT_MIN_WIDTH, la courbe
+  // serait masquée : le panneau reste alors ancré sous le graphe.
+  const FLOAT_MIN_WIDTH = 560;
+  const FLOAT_GAP = 16;
+  const stage = document.getElementById('eqStage');
+  const inspector = document.getElementById('eqInspector');
+
+  function inspectorBusy() {
+    // Pendant qu'on tourne un potard ou qu'on tape une valeur, le point bouge :
+    // déplacer le panneau ferait fuir le potard sous le doigt.
+    return Boolean(inspector.querySelector('.knob-dial.is-turning'))
+      || inspector.contains(document.activeElement) && document.activeElement.tagName === 'INPUT';
+  }
+
+  function positionInspector() {
+    if (!stage || !inspector) return;
+    const floating = stage.clientWidth >= FLOAT_MIN_WIDTH;
+    inspector.classList.toggle('is-floating', floating);
+    if (!floating) {
+      inspector.style.left = '';
+      inspector.style.top = '';
+      return;
+    }
+    const band = selected();
+    if (!band || inspectorBusy()) return;
+
+    const W = canvas.clientWidth;
+    const H = canvas.clientHeight;
+    const x0 = canvas.offsetLeft;
+    const y0 = canvas.offsetTop;
+    const px = x0 + freqToX(band.freq, W);
+    const py = y0 + dbToY(TYPES_WITH_GAIN.includes(band.type) ? band.gain : 0, H);
+    const pw = inspector.offsetWidth;
+    const ph = inspector.offsetHeight;
+
+    const left = Math.min(Math.max(px - pw / 2, x0 + 8), x0 + W - pw - 8);
+    // Sous le point de préférence, au-dessus s'il n'y a pas la place.
+    let top = py + FLOAT_GAP;
+    if (top + ph > y0 + H - 6) top = py - FLOAT_GAP - ph;
+    top = Math.max(top, y0 + 6);
+
+    inspector.style.left = `${Math.round(left)}px`;
+    inspector.style.top = `${Math.round(top)}px`;
   }
 
   // ── Envoi au serveur ─────────────────────────────────────────────────────
@@ -522,6 +571,7 @@
       lastY = null;
       dial.classList.remove('is-turning');
       try { dial.releasePointerCapture(event.pointerId); } catch (_) { /* déjà relâché */ }
+      positionInspector();
     };
     dial.addEventListener('pointerup', release);
     dial.addEventListener('pointercancel', release);
@@ -581,6 +631,7 @@
     }
     selectedId = band.id;
     dragging = band;
+    inspector?.classList.add('is-ghost');
     canvas.setPointerCapture(event.pointerId);
     updateReadout();
     draw();
@@ -601,6 +652,7 @@
   function endDrag(event) {
     if (!dragging) return;
     dragging = null;
+    inspector?.classList.remove('is-ghost');
     try { canvas.releasePointerCapture(event.pointerId); } catch (_) { /* déjà relâché */ }
     scheduleSend();
   }
@@ -686,7 +738,10 @@
         scheduleSend();
       }
     });
-    el.addEventListener('blur', updateReadout);
+    el.addEventListener('blur', () => {
+      updateReadout();
+      positionInspector();
+    });
     el.addEventListener('focus', () => el.select());
   }
 
