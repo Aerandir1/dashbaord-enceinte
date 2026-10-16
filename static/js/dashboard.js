@@ -4,6 +4,21 @@
 const SOURCE_ORDER = ['spotify', 'airplay', 'musicassistant', 'none'];
 const SOURCE_PLANNED = new Set(['musicassistant']);
 
+// Interface d'appareil, pas page web : ni pincement, ni double-tap, ni
+// Ctrl+molette / Ctrl+± pour zoomer (iOS ignore user-scalable=no).
+['gesturestart', 'gesturechange'].forEach((type) => {
+  document.addEventListener(type, (event) => event.preventDefault());
+});
+document.addEventListener('touchmove', (event) => {
+  if (event.touches.length > 1) event.preventDefault();
+}, { passive: false });
+document.addEventListener('wheel', (event) => {
+  if (event.ctrlKey) event.preventDefault();
+}, { passive: false });
+document.addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && ['+', '-', '=', '0'].includes(event.key)) event.preventDefault();
+});
+
 async function callApi(url, payload) {
   const response = await fetch(url, {
     method: 'POST',
@@ -165,11 +180,9 @@ function render(state) {
   document.getElementById('deviceLine').textContent = `${state.device_name} · ${state.room}`;
   document.getElementById('trackName').textContent = state.current_track;
   document.getElementById('artistName').textContent = state.current_artist;
-  document.getElementById('volumeValue').textContent = state.volume;
-  const volumeSlider = document.getElementById('volumeSlider');
-  volumeSlider.value = state.volume;
-  // Remplit la piste jusqu'à la valeur (dégradé côté CSS).
-  volumeSlider.style.setProperty('--val', `${state.volume}%`);
+  // Pendant qu'on tourne le potard, l'état reçu (flux temps réel ou réponse
+  // d'un envoi intermédiaire) est en retard sur la main : on ne l'écrase pas.
+  if (!volumeTurning) showVolume(state.volume);
   // L'aurore et l'orbe "respirent" uniquement quand ça joue réellement.
   document.body.classList.toggle('is-playing', Boolean(state.is_playing));
   // ── Wi-Fi (donnees reelles : /proc/net/wireless + nmcli) ──
@@ -296,14 +309,127 @@ document.getElementById('volUp').addEventListener('click', async () => {
   render(state);
 });
 
-// Remplissage live pendant le glissement (avant l'envoi, qui se fait au relâché).
-document.getElementById('volumeSlider').addEventListener('input', (event) => {
-  event.target.style.setProperty('--val', `${event.target.value}%`);
-});
+// ── Potard de volume (façon ampli hi-fi) ─────────────────────────────────
+// Course de 300°, graduée de 0 à 10 ; les graduations s'allument en ambre
+// jusqu'à la valeur, comme le cadran éclairé d'un vieil ampli.
+const VOL_SWEEP = 150;
+const volumeKnob = document.getElementById('volumeKnob');
+const volumeTicks = [];
+let volumeLevel = Number(volumeKnob.getAttribute('aria-valuenow')) || 0;
+let volumeTurning = false;
 
-document.getElementById('volumeSlider').addEventListener('change', async (event) => {
-  const state = await callApi('/api/volume', { volume: Number(event.target.value) });
-  render(state);
+function buildVolumeScale() {
+  const svg = volumeKnob.querySelector('.vol-scale');
+  const ns = 'http://www.w3.org/2000/svg';
+  for (let i = 0; i <= 50; i += 1) {
+    const rad = ((-VOL_SWEEP + i * 6 - 90) * Math.PI) / 180;
+    const major = i % 5 === 0;
+    const r0 = major ? 84 : 88;
+    const tick = document.createElementNS(ns, 'line');
+    tick.setAttribute('x1', 100 + r0 * Math.cos(rad));
+    tick.setAttribute('y1', 100 + r0 * Math.sin(rad));
+    tick.setAttribute('x2', 100 + 96 * Math.cos(rad));
+    tick.setAttribute('y2', 100 + 96 * Math.sin(rad));
+    tick.setAttribute('class', major ? 'vol-tick is-major' : 'vol-tick');
+    tick.dataset.step = i * 2;
+    svg.appendChild(tick);
+    volumeTicks.push(tick);
+    if (major) {
+      const label = document.createElementNS(ns, 'text');
+      label.setAttribute('x', 100 + 73 * Math.cos(rad));
+      label.setAttribute('y', 100 + 73 * Math.sin(rad));
+      label.setAttribute('class', 'vol-num');
+      label.textContent = i / 5;
+      svg.appendChild(label);
+    }
+  }
+}
+
+function showVolume(value) {
+  volumeLevel = value;
+  volumeKnob.style.setProperty('--angle', `${-VOL_SWEEP + value * 3}deg`);
+  volumeKnob.setAttribute('aria-valuenow', value);
+  volumeKnob.setAttribute('aria-valuetext', `${value} %`);
+  document.getElementById('volumeValue').textContent = value;
+  volumeTicks.forEach((tick) => {
+    tick.classList.toggle('is-lit', value > 0 && Number(tick.dataset.step) <= value);
+  });
+}
+
+// Envoi limité à un appel toutes les 150 ms pendant qu'on tourne : le son
+// suit la main sans inonder le Pi de requêtes.
+let volumeSendTimer = null;
+let volumeSendPending = false;
+
+function sendVolume() {
+  if (volumeSendTimer) {
+    volumeSendPending = true;
+    return;
+  }
+  const target = volumeLevel;
+  callApi('/api/volume', { volume: target }).then((state) => {
+    if (state && !volumeTurning && target === volumeLevel) render(state);
+  });
+  volumeSendTimer = setTimeout(() => {
+    volumeSendTimer = null;
+    if (volumeSendPending) {
+      volumeSendPending = false;
+      sendVolume();
+    }
+  }, 150);
+}
+
+function setVolume(value) {
+  const next = Math.min(100, Math.max(0, Math.round(value)));
+  if (next === volumeLevel) return;
+  showVolume(next);
+  sendVolume();
+}
+
+buildVolumeScale();
+showVolume(volumeLevel);
+
+let volumeDrag = null;
+volumeKnob.addEventListener('pointerdown', (event) => {
+  if (event.button > 0) return;
+  event.preventDefault();
+  volumeKnob.setPointerCapture(event.pointerId);
+  volumeKnob.classList.add('is-turning');
+  volumeTurning = true;
+  volumeDrag = { x: event.clientX, y: event.clientY, acc: volumeLevel };
+});
+volumeKnob.addEventListener('pointermove', (event) => {
+  if (!volumeDrag) return;
+  // Vers le haut ou vers la droite : on monte. ~220 px pour toute la course,
+  // Maj pour un réglage fin.
+  const delta = (volumeDrag.y - event.clientY) + (event.clientX - volumeDrag.x);
+  volumeDrag.acc = Math.min(100, Math.max(0, volumeDrag.acc + delta * (event.shiftKey ? 0.1 : 0.45)));
+  volumeDrag.x = event.clientX;
+  volumeDrag.y = event.clientY;
+  setVolume(volumeDrag.acc);
+});
+function releaseVolume(event) {
+  if (!volumeDrag) return;
+  volumeDrag = null;
+  volumeTurning = false;
+  volumeKnob.classList.remove('is-turning');
+  try { volumeKnob.releasePointerCapture(event.pointerId); } catch (_) { /* déjà relâché */ }
+}
+volumeKnob.addEventListener('pointerup', releaseVolume);
+volumeKnob.addEventListener('pointercancel', releaseVolume);
+
+volumeKnob.addEventListener('wheel', (event) => {
+  event.preventDefault();
+  setVolume(volumeLevel + (event.deltaY < 0 ? 1 : -1) * (event.shiftKey ? 1 : 2));
+}, { passive: false });
+
+volumeKnob.addEventListener('keydown', (event) => {
+  const steps = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 10, PageDown: -10 };
+  if (event.key in steps) setVolume(volumeLevel + steps[event.key]);
+  else if (event.key === 'Home') setVolume(0);
+  else if (event.key === 'End') setVolume(100);
+  else return;
+  event.preventDefault();
 });
 
 document.getElementById('muteBtn').addEventListener('click', async () => {

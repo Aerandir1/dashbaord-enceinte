@@ -60,7 +60,24 @@ body[data-theme="light"] {
 
 * { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; }
+html {
+  -webkit-text-size-adjust: 100%;
+  /* Pas de zoom au double-tap ; les gestes de défilement restent permis. */
+  touch-action: manipulation;
+}
+
+/* Pas de sélection de texte : c'est une télécommande, pas un document.
+   Les champs de saisie restent sélectionnables pour pouvoir y taper. */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
 
 body {
   margin: 0;
@@ -361,48 +378,77 @@ body.is-playing .np-ring { animation: ringPulse 3.4s ease-in-out infinite; }
 .controls { display: flex; align-items: center; gap: 12px; }
 #playBtn { width: 56px; min-width: 56px; height: 56px; font-size: 1.4rem; }
 
-/* ── Volume : jauge verticale (façon Centre de contrôle Apple) ────────────── */
+/* ── Volume : potard d'ampli hi-fi ─────────────────────────────────────────
+   Cadran gradué 0–10 qui s'éclaire en ambre, bouton en aluminium brossé à
+   jupe moletée. La lumière (reflets, ombre) est fixe : seul le repère tourne. */
 .volume-panel { display: flex; flex-direction: column; align-items: center; }
 .volume-panel h2 { align-self: flex-start; }
-.vol-gauge { position: relative; width: 68px; height: 216px; margin: 4px 0 2px; }
+.vol-knob {
+  position: relative;
+  width: min(220px, 100%);
+  aspect-ratio: 1;
+  margin: 2px 0 0;
+  border-radius: 50%;
+  cursor: ns-resize;
+  touch-action: none;
+  outline: none;
+}
+.vol-knob:focus-visible .vol-knob-body { box-shadow: 0 0 0 3px var(--accent), 0 16px 30px -10px rgba(0, 0, 0, 0.85); }
+.vol-scale { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.vol-tick { stroke: var(--muted); stroke-width: 1.4; stroke-linecap: round; opacity: 0.35; transition: stroke .12s, opacity .12s; }
+.vol-tick.is-major { stroke-width: 2.4; opacity: 0.6; }
+.vol-tick.is-lit { stroke: var(--ember); opacity: 1; }
+.vol-num {
+  fill: var(--muted);
+  font: 600 11px "Space Grotesk", system-ui, sans-serif;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
 
-/* La barre EST le contrôle : pas de poignée, on remplit par le bas jusqu'à la
-   valeur, et on glisse le long de la colonne. */
-#volumeSlider {
-  -webkit-appearance: none; appearance: none;
-  writing-mode: vertical-lr;      /* orientation verticale (standard moderne) */
-  direction: rtl;                 /* 0 en bas, 100 en haut */
-  width: 68px; height: 216px;
-  margin: 0; padding: 0;
-  border-radius: 24px;
+/* Jupe moletée + éclairage du dessus. */
+.vol-knob-body {
+  position: absolute; inset: 22%;
+  border-radius: 50%;
   background:
-    linear-gradient(to top, #ffffff 0 var(--val, 42%), rgba(255, 255, 255, 0.13) var(--val, 42%) 100%);
-  box-shadow: inset 0 0 0 1px var(--glass-border), inset 0 3px 10px rgba(0, 0, 0, 0.35);
-  cursor: pointer;
-  overflow: hidden;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(0, 0, 0, 0.35)),
+    repeating-conic-gradient(#c9ccd6 0 2.5deg, #6f727e 2.5deg 5deg);
+  box-shadow:
+    0 16px 30px -10px rgba(0, 0, 0, 0.85),
+    0 4px 8px -2px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(0, 0, 0, 0.55);
 }
-body[data-theme="light"] #volumeSlider {
+/* Face en aluminium brossé (reflets coniques fixes). */
+.vol-knob-body::before {
+  content: ""; position: absolute; inset: 10%;
+  border-radius: 50%;
   background:
-    linear-gradient(to top, #4f7bff 0 var(--val, 42%), rgba(80, 90, 140, 0.18) var(--val, 42%) 100%);
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.25) 0 6%, transparent 7%),
+    conic-gradient(from 20deg,
+      #f4f5f8, #a3a6b1 12%, #e6e7ec 25%, #8f929d 38%, #f2f3f6 50%,
+      #a3a6b1 62%, #e6e7ec 75%, #8f929d 88%, #f4f5f8);
+  box-shadow:
+    inset 0 2px 2px rgba(255, 255, 255, 0.85),
+    inset 0 -3px 5px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(0, 0, 0, 0.35);
 }
-/* Poignée invisible mais saisissable sur toute l'épaisseur. */
-#volumeSlider::-webkit-slider-thumb {
-  -webkit-appearance: none; appearance: none;
-  width: 68px; height: 8px; background: transparent; border: 0;
+/* Seul le repère tourne : un trait gravé, du bord vers le centre. */
+.vol-knob-index {
+  position: absolute; inset: 10%;
+  border-radius: 50%;
+  transform: rotate(var(--angle, 0deg));
+  transition: transform .06s linear;
 }
-#volumeSlider::-moz-range-thumb { width: 68px; height: 8px; background: transparent; border: 0; }
-#volumeSlider::-moz-range-track { background: transparent; }
-#volumeSlider:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.vol-knob-index::after {
+  content: ""; position: absolute;
+  left: 50%; top: 6%;
+  width: 4px; height: 30%; margin-left: -2px;
+  border-radius: 2px;
+  background: #1b1c24;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.vol-knob.is-turning .vol-knob-index { transition: none; }
 
-/* Icône haut-parleur au fond de la jauge, lisible sur le remplissage. */
-.vol-icon {
-  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
-  width: 24px; height: 24px; pointer-events: none;
-  color: rgba(30, 34, 60, 0.62);
-}
-body[data-theme="light"] .vol-icon { color: rgba(255, 255, 255, 0.85); }
-
-.vol-readout { margin: 6px 0 14px; }
+.vol-readout { margin: 0 0 14px; }
 .vol-readout strong {
   font-family: "Space Grotesk", system-ui, sans-serif;
   font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums;

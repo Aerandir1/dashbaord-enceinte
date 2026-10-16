@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Dashboard Enceinte Connectée</title>
   <style>
     /* Écran de chargement — CSS INLINE dans le <head> pour peindre au tout
@@ -154,13 +154,13 @@
 
       <article class="panel volume-panel">
         <h2>Volume</h2>
-        <div class="vol-gauge">
-          <input id="volumeSlider" type="range" min="0" max="100" value="{{ state.volume }}"
-                 orient="vertical" aria-label="Volume" aria-orientation="vertical">
-          <svg class="vol-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 9v6h4l5 5V4L8 9H4z" fill="currentColor"/>
-            <path d="M16 8.8a4 4 0 0 1 0 6.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-          </svg>
+        <div class="vol-knob" id="volumeKnob" role="slider" tabindex="0" aria-label="Volume"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ state.volume }}"
+             style="--angle: {{ -150 + 3 * state.volume }}deg">
+          <svg class="vol-scale" viewBox="0 0 200 200" aria-hidden="true"></svg>
+          <div class="vol-knob-body">
+            <div class="vol-knob-index"></div>
+          </div>
         </div>
         <p class="vol-readout"><strong id="volumeValue">{{ state.volume }}</strong><span>%</span></p>
         <div class="vol-actions">
