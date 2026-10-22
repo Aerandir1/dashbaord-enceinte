@@ -11,25 +11,47 @@
     html, body { margin: 0; height: 100%; }
     body {
       display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 1.4rem;
-      background: #0d1117; color: #e6edf3;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      align-items: center; justify-content: center; gap: 1.2rem;
+      background:
+        repeating-linear-gradient(180deg, rgba(0,0,0,.35) 0 1px, transparent 1px 3px),
+        radial-gradient(circle at 50% 45%, #06200f, #020a05 70%, #000);
+      color: #5cff8f;
+      font-family: "VT323", "Share Tech Mono", ui-monospace, monospace;
+      text-transform: uppercase; letter-spacing: .08em;
+      text-shadow: 0 0 4px rgba(92,255,143,.7), 0 0 14px rgba(92,255,143,.35);
     }
-    .splash-logo { display: flex; align-items: flex-end; justify-content: center; gap: 6px; height: 76px; }
+    .splash-logo {
+      display: flex; align-items: flex-end; justify-content: center;
+      gap: 5px; height: 76px; padding: 0 6px 6px;
+      border-bottom: 2px solid currentColor;
+    }
     .splash-bar {
-      width: 10px; border-radius: 6px; transform-origin: bottom;
-      background: linear-gradient(180deg, #4f8cff, #7c5cff);
-      animation: splashBars 1s ease-in-out infinite;
+      width: 14px; transform-origin: bottom;
+      background: repeating-linear-gradient(0deg, currentColor 0 7px, transparent 7px 10px);
+      filter: drop-shadow(0 0 4px rgba(92,255,143,.8));
+      animation: splashBars 1s steps(6) infinite;
     }
     .splash-bar:nth-child(1) { height: 34px; animation-delay: 0s; }
     .splash-bar:nth-child(2) { height: 60px; animation-delay: .15s; }
     .splash-bar:nth-child(3) { height: 76px; animation-delay: .30s; }
     .splash-bar:nth-child(4) { height: 48px; animation-delay: .45s; }
-    .splash-title { font-size: 1.15rem; font-weight: 600; letter-spacing: .02em; }
-    .splash-sub { font-size: .85rem; opacity: .6; }
+    .splash-title { font-size: 2.4rem; line-height: 1; }
+    .splash-sub { font-size: 1.3rem; opacity: .75; }
+    .splash-sub::before { content: "> "; }
+    .splash-sub::after { content: "_"; animation: splashBlink 1s steps(1) infinite; }
     @keyframes splashBars { 0%, 100% { transform: scaleY(.4); } 50% { transform: scaleY(1); } }
-    @media (prefers-reduced-motion: reduce) { .splash-bar { animation: none; } }
-    @media (prefers-color-scheme: light) { body { background: #f6f8fa; color: #1f2328; } }
+    @keyframes splashBlink { 50% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { .splash-bar, .splash-sub::after { animation: none; } }
+    @media (prefers-color-scheme: light) {
+      body {
+        background:
+          repeating-linear-gradient(180deg, rgba(0,0,0,.35) 0 1px, transparent 1px 3px),
+          radial-gradient(circle at 50% 45%, #1f1303, #0a0601 70%, #000);
+        color: #ffb840;
+        text-shadow: 0 0 4px rgba(255,184,64,.7), 0 0 14px rgba(255,184,64,.35);
+      }
+      .splash-bar { filter: drop-shadow(0 0 4px rgba(255,184,64,.8)); }
+    }
   </style>
   <script>
     // Le backend démarre encore : on retente tout seul jusqu'à ce qu'il réponde.

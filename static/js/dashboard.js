@@ -81,13 +81,14 @@ function applyTheme(theme, synced) {
   body.dataset.theme = theme;
   if (toggle) {
     const isLight = theme === 'light';
+    // Nuit = phosphore vert, jour = phosphore ambre (cf. custom.css).
     if (synced) {
-      toggle.textContent = isLight ? '☀️ Système' : '🌙 Système';
-      toggle.setAttribute('aria-label', 'Thème synchronisé avec le système — cliquez pour choisir manuellement');
+      toggle.textContent = isLight ? 'Ambre · auto' : 'Vert · auto';
+      toggle.setAttribute('aria-label', 'Phosphore synchronisé avec le thème du système — cliquez pour choisir manuellement');
       toggle.classList.add('synced');
     } else {
-      toggle.textContent = isLight ? '☀️ Jour' : '🌙 Nuit';
-      toggle.setAttribute('aria-label', isLight ? 'Activer le thème nuit' : 'Activer le thème jour');
+      toggle.textContent = isLight ? 'Phosphore ambre' : 'Phosphore vert';
+      toggle.setAttribute('aria-label', isLight ? 'Passer au phosphore vert' : 'Passer au phosphore ambre');
       toggle.classList.remove('synced');
     }
   }

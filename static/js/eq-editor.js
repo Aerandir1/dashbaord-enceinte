@@ -19,9 +19,10 @@
   const GRID_DBS = [-12, -6, 0, 6, 12];
 
   // Couleurs des bandes, reprises pour le point et sa courbe individuelle.
+  // Teintes « phosphore » : lisibles sur fond noir, dans l'esprit terminal.
   const BAND_COLORS = [
-    '#38bdf8', '#a78bfa', '#f472b6', '#fb923c',
-    '#4ade80', '#facc15', '#22d3ee', '#f87171'
+    '#5cff8f', '#ffb840', '#5ce1ff', '#ff6a4d',
+    '#e8ffb0', '#d38cff', '#b4ff3c', '#ff9ad5'
   ];
 
   const TYPES_WITH_GAIN = ['Peaking', 'Lowshelf', 'Highshelf'];
@@ -167,19 +168,21 @@
     const ratio = window.devicePixelRatio || 1;
     const W = canvas.width / ratio;
     const H = canvas.height / ratio;
-    const muted = cssVar('--muted', '#9db0ca');
-    const text = cssVar('--text', '#e7edf7');
+    const muted = cssVar('--muted', '#34b863');
+    const text = cssVar('--text', '#5cff8f');
+    const grid = cssVar('--grid', 'rgba(92,255,143,0.12)');
+    const gridStrong = cssVar('--grid-strong', 'rgba(92,255,143,0.38)');
 
     ctx.clearRect(0, 0, W, H);
 
     // Grille
     ctx.lineWidth = 1;
-    ctx.font = '10px Inter, system-ui, sans-serif';
+    ctx.font = '14px VT323, "Share Tech Mono", monospace';
     ctx.fillStyle = muted;
 
     GRID_FREQS.forEach((f) => {
       const x = freqToX(f, W);
-      ctx.strokeStyle = 'rgba(148,163,184,0.14)';
+      ctx.strokeStyle = grid;
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, H - 12);
@@ -191,7 +194,7 @@
 
     GRID_DBS.forEach((db) => {
       const y = dbToY(db, H);
-      ctx.strokeStyle = db === 0 ? 'rgba(148,163,184,0.34)' : 'rgba(148,163,184,0.12)';
+      ctx.strokeStyle = db === 0 ? gridStrong : grid;
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(W, y);
@@ -227,8 +230,8 @@
 
     const zeroY = dbToY(0, H);
     const gradient = ctx.createLinearGradient(0, 0, 0, H);
-    gradient.addColorStop(0, 'rgba(56,189,248,0.20)');
-    gradient.addColorStop(1, 'rgba(56,189,248,0.02)');
+    gradient.addColorStop(0, cssVar('--curve-fill-top', 'rgba(92,255,143,0.22)'));
+    gradient.addColorStop(1, cssVar('--curve-fill-bottom', 'rgba(92,255,143,0.02)'));
     ctx.fillStyle = gradient;
     ctx.beginPath();
     ctx.moveTo(0, zeroY);
@@ -237,11 +240,15 @@
     ctx.closePath();
     ctx.fill();
 
+    // Trace du phosphore : un halo sous la courbe, comme sur un écran CRT.
     ctx.strokeStyle = text;
     ctx.lineWidth = 2;
+    ctx.shadowColor = text;
+    ctx.shadowBlur = 8;
     ctx.beginPath();
     points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
     ctx.stroke();
+    ctx.shadowBlur = 0;
 
     // Points de contrôle
     bands.forEach((band, index) => {
@@ -251,8 +258,10 @@
       const selected = band.id === selectedId;
 
       ctx.globalAlpha = band.enabled ? 1 : 0.35;
+      // Repères carrés, façon curseur de terminal.
+      const r = selected ? 7 : 5;
       ctx.beginPath();
-      ctx.arc(x, y, selected ? 8 : 6, 0, Math.PI * 2);
+      ctx.rect(x - r, y - r, r * 2, r * 2);
       ctx.fillStyle = color;
       ctx.fill();
       if (selected) {
@@ -839,6 +848,8 @@
   window.addEventListener('resize', resize);
   // Le thème change les couleurs de la grille et de la courbe.
   new MutationObserver(draw).observe(document.body, { attributes: true, attributeFilter: ['data-theme'] });
+  // La police terminal (VT323) des graduations arrive parfois après le 1er tracé.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
 
   init();
 })();
