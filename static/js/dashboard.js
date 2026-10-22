@@ -68,50 +68,6 @@ function startRealtimeSync() {
   };
 }
 
-const _systemQuery = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)');
-
-function _isManualOverride() {
-  const v = sessionStorage.getItem('dashboard-theme');
-  return v === 'light' || v === 'dark';
-}
-
-function applyTheme(theme, synced) {
-  const body = document.body;
-  const toggle = document.getElementById('themeToggle');
-  body.dataset.theme = theme;
-  if (toggle) {
-    const isLight = theme === 'light';
-    // Nuit = phosphore vert, jour = phosphore ambre (cf. custom.css).
-    if (synced) {
-      toggle.textContent = isLight ? 'Ambre · auto' : 'Vert · auto';
-      toggle.setAttribute('aria-label', 'Phosphore synchronisé avec le thème du système — cliquez pour choisir manuellement');
-      toggle.classList.add('synced');
-    } else {
-      toggle.textContent = isLight ? 'Phosphore ambre' : 'Phosphore vert';
-      toggle.setAttribute('aria-label', isLight ? 'Passer au phosphore vert' : 'Passer au phosphore ambre');
-      toggle.classList.remove('synced');
-    }
-  }
-}
-
-function initTheme() {
-  if (_isManualOverride()) {
-    applyTheme(sessionStorage.getItem('dashboard-theme'), false);
-  } else {
-    const preferLight = _systemQuery && _systemQuery.matches;
-    applyTheme(preferLight ? 'light' : 'dark', true);
-  }
-
-  // Écoute les changements du thème système en temps réel
-  if (_systemQuery && _systemQuery.addEventListener) {
-    _systemQuery.addEventListener('change', (e) => {
-      if (!_isManualOverride()) {
-        applyTheme(e.matches ? 'light' : 'dark', true);
-      }
-    });
-  }
-}
-
 // L'écran de chargement s'efface au tout premier état reçu (que ce soit via
 // /api/state ou le premier événement SSE), une seule fois.
 let _splashDismissed = false;
@@ -440,20 +396,6 @@ document.getElementById('muteBtn').addEventListener('click', async () => {
   render(state);
 });
 
-document.getElementById('themeToggle').addEventListener('click', () => {
-  const nextTheme = document.body.dataset.theme === 'light' ? 'dark' : 'light';
-  sessionStorage.setItem('dashboard-theme', nextTheme);
-  applyTheme(nextTheme, false);
-});
-
-// Double-clic : retour à la synchronisation avec le système
-document.getElementById('themeToggle').addEventListener('dblclick', (e) => {
-  e.preventDefault();
-  sessionStorage.removeItem('dashboard-theme');
-  const preferLight = _systemQuery && _systemQuery.matches;
-  applyTheme(preferLight ? 'light' : 'dark', true);
-});
-
 // ── Sélection de la source ──
 // Choisir une source démarre son service et arrête l'autre côté serveur.
 // L'opération prend une seconde ou deux : on l'indique au lieu de laisser
@@ -507,8 +449,6 @@ if (sourceSelector) {
     }
   });
 }
-
-initTheme();
 
 fetchState().then((state) => {
   if (state) render(state);

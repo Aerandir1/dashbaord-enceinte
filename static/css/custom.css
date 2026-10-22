@@ -76,6 +76,8 @@ body[data-theme="light"] {
 }
 
 * { box-sizing: border-box; }
+/* L'attribut hidden doit l'emporter sur les display: flex des composants. */
+[hidden] { display: none !important; }
 
 html {
   -webkit-text-size-adjust: 100%;
@@ -158,9 +160,9 @@ h2 { font-size: 1.45rem; line-height: 1; }
 
 /* ── Ossature ─────────────────────────────────────────────────────────────── */
 .dashboard {
-  max-width: 1240px;
+  min-height: 100vh;
   margin: 0 auto;
-  padding: clamp(14px, 3vw, 34px);
+  padding: clamp(10px, 1.6vw, 24px);
   display: flex;
   flex-direction: column;
   gap: var(--space);
@@ -231,11 +233,39 @@ h2 { font-size: 1.45rem; line-height: 1; }
   box-shadow: var(--glow);
 }
 
-/* Bento : trois blocs respirent plus large ; Lecture est le héros. */
-.panel--hero { grid-column: span 2; grid-row: span 2; }
-.service-panel,
-.eq-panel,
-.settings-panel { grid-column: span 2; }
+/* Disposition sur ordinateur : toute la page, en trois colonnes rangées.
+   À gauche la source puis ce qui joue, au centre l'égaliseur (il a besoin de
+   largeur), à droite le volume et l'état. Le volume s'étend sur deux rangées
+   pour que les deux colonnes latérales restent alignées sans trou.
+   Tablette et mobile : voir « Responsive ». */
+.dashboard > .grid {
+  flex: 1 1 auto;
+  grid-template-columns: minmax(300px, 1fr) minmax(0, 2.2fr) minmax(290px, 1fr);
+  grid-template-rows: auto auto 1fr;
+  grid-template-areas:
+    "source eq volume"
+    "player eq volume"
+    "player eq status";
+}
+.np-panel      { grid-area: player; }
+.eq-panel      { grid-area: eq; }
+.service-panel { grid-area: source; }
+.volume-panel  { grid-area: volume; }
+.status-panel  { grid-area: status; }
+
+/* Page Réglages : deux colonnes, le Wi-Fi occupe toute la hauteur à droite. */
+.dashboard > .settings-grid {
+  flex: 0 1 auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "name    wifi"
+    "display wifi";
+}
+.settings-name    { grid-area: name; }
+.settings-display { grid-area: display; }
+.settings-wifi    { grid-area: wifi; }
+.settings-wifi .wifi-list { max-height: 420px; }
 
 /* En-tête : plaque signalétique métallique, avec un petit écran. */
 header.panel {
@@ -254,6 +284,13 @@ header.panel h1::after {
 }
 @keyframes cursorBlink { 50% { opacity: 0; } }
 .header-actions { display: flex; gap: 10px; }
+a.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; }
+.settings-link .gear { width: 24px; height: 24px; flex: none; transition: transform 0.6s ease; }
+.settings-link:hover .gear,
+.settings-link:focus-visible .gear { transform: rotate(90deg); }
+/* La roue dentée sert d'icône : pas de crochets autour du bouton. */
+.btn.settings-link:not(.icon-btn)::before, .btn.settings-link:not(.icon-btn)::after,
+.btn.back-link:not(.icon-btn)::before, .btn.back-link:not(.icon-btn)::after { content: none; }
 .brand { display: flex; align-items: center; gap: 16px; }
 .brand-mark {
   width: 54px; height: 54px; border-radius: 50%;
@@ -408,6 +445,29 @@ svg.source-logo { background: none; -webkit-mask: none; mask: none; }
 .source-selector.is-busy { opacity: 0.6; pointer-events: none; }
 .source-selector.is-busy .source-lamp { animation: busyBlink 0.5s steps(1) infinite; }
 @keyframes busyBlink { 50% { opacity: 0.3; } }
+.choice-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(var(--fg-rgb), 0.5);
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: var(--radius-sm);
+}
+.choice {
+  appearance: none;
+  border: 0;
+  min-height: 44px;
+  background: transparent;
+  color: var(--fg-dim);
+  font: 400 1.25rem var(--font-term);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.choice:hover { color: var(--fg); text-shadow: var(--glow); }
+.choice[aria-checked="true"] { background: var(--fg); color: var(--screen); box-shadow: var(--glow-strong); text-shadow: none; }
+
 .source-hint { color: var(--fg-dim); font-size: 0.9rem; margin: 14px 0 0; }
 .source-hint::before { content: "> "; }
 
@@ -961,23 +1021,82 @@ body.is-playing .np-scope .wave-b { animation: scopeB 2.7s linear infinite; }
 .grid > .panel:nth-child(5) { animation-delay: 0.45s, 1s; }
 .grid > .panel:nth-child(6) { animation-delay: 0.55s, 1.1s; }
 
-/* ── Responsive ───────────────────────────────────────────────────────────── */
-@media (max-width: 1080px) {
-  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .panel--hero { grid-row: auto; }
+/* ── Ordinateur : l'égaliseur remplit la hauteur de sa colonne ───────────── */
+@media (min-width: 1081px) {
+  .eq-panel { display: flex; flex-direction: column; }
+  .eq-stage { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+  /* flex-basis 0 + min-height explicite : la taille vient de la colonne, jamais
+     de la résolution interne du canvas (qui suit sa taille affichée). */
+  #eqCanvas { flex: 1 1 0; min-height: 280px; }
+  .eq-inspector:not(.is-floating) { flex: none; }
+
+  /* La pochette prend la hauteur qui reste une fois le reste de la colonne
+     posé (≈ 735 px : en-tête, bloc Source, titres et commandes), pour que la
+     page tienne dans l'écran sans défiler. */
+  .np-art { width: clamp(180px, calc(100vh - 735px), 100%); }
+
+  header.panel { padding: 12px 20px; }
+  .brand-mark { width: 48px; height: 48px; }
+  h1 { font-size: 2.3rem; }
+
+  .stats li { padding: 6px 0; }
+
+  /* Colonne de droite plus étroite : sélecteur de source en 2 × 2. */
+  .service-panel .source-selector { grid-template-columns: repeat(2, 1fr); }
+  .service-panel { container-type: inline-size; }
+  .service-panel .source-option { min-width: 0; padding: 10px 4px 8px; }
+  /* L'entrée grisée suffit à dire « pas encore » ; le détail est dans l'infobulle. */
+  .service-panel .source-option.is-planned .source-badge { display: none; }
+  /* Colonne assez large : icône et libellé côte à côte, plus compact. */
+  @container (min-width: 340px) {
+    .service-panel .source-option { flex-direction: row; justify-content: flex-start; gap: 10px; padding: 12px; text-align: left; }
+  }
+  .service-panel .source-lamp {
+    width: calc((100% - 8px) / 2);
+    height: calc((100% - 8px) / 2);
+    bottom: auto;
+  }
+  .service-panel .source-selector[data-index="0"] .source-lamp { transform: translate(0, 0); }
+  .service-panel .source-selector[data-index="1"] .source-lamp { transform: translate(100%, 0); }
+  .service-panel .source-selector[data-index="2"] .source-lamp { transform: translate(0, 100%); }
+  .service-panel .source-selector[data-index="3"] .source-lamp { transform: translate(100%, 100%); }
+
+  .vol-knob { width: min(190px, 100%); }
 }
+
+/* ── Tablette : deux colonnes ─────────────────────────────────────────────── */
+@media (max-width: 1080px) {
+  .dashboard > .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+    grid-template-areas: none;
+  }
+  .np-panel, .eq-panel, .service-panel, .volume-panel, .status-panel { grid-area: auto; }
+  .service-panel, .panel--hero, .eq-panel { grid-column: span 2; }
+  .dashboard > .settings-grid { grid-template-areas: "name display" "wifi wifi"; }
+  .settings-name, .settings-display, .settings-wifi { grid-area: auto; }
+  .settings-wifi { grid-column: span 2; }
+}
+
+/* ── Mobile : une colonne ─────────────────────────────────────────────────── */
 @media (max-width: 620px) {
-  .grid { grid-template-columns: 1fr; }
-  /* Reset TOUS les span (dont .service-panel) : un « span 2 » restant force
-     une colonne implicite et casse la mise en page une-colonne. */
-  .service-panel, .panel--hero, .eq-panel, .settings-panel { grid-column: auto; }
-  .panel--hero { grid-row: auto; }
+  .dashboard > .grid, .dashboard > .settings-grid { grid-template-columns: 1fr; grid-template-areas: none; }
+  /* Reset TOUS les span : un « span 2 » restant force une colonne implicite
+     et casse la mise en page une-colonne. */
+  .service-panel, .panel--hero, .eq-panel, .settings-wifi { grid-column: auto; }
   .eq-inspector { grid-template-columns: 1fr; }
   .eq-rack-side { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; }
   .knob-dial { width: 72px; height: 72px; }
   h1 { font-size: 2rem; }
-  header.panel { flex-wrap: wrap; }
+  header.panel { padding: 14px 16px; }
   header.panel p::before { content: none; }
+  .brand { gap: 12px; min-width: 0; }
+  .brand-mark { width: 44px; height: 44px; }
+  .brand-mark svg { width: 28px; height: 28px; }
+  /* Dans l'en-tête, la roue dentée seule suffit. */
+  .settings-link { width: 48px; padding: 0; }
+  .settings-link span, .back-link span:last-child { display: none; }
+  .back-link { width: 48px; padding: 0; }
   .source-option { font-size: 0.95rem; }
   .panel { margin: 8px; }
 }

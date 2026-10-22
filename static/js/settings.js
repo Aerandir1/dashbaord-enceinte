@@ -1,6 +1,6 @@
 // Réglages : renommage de l'enceinte + gestion du Wi-Fi.
-// Ce script pilote aussi bien le panneau « Réglages » du tableau de bord que la
-// page d'accueil /setup (mode point d'accès). Chaque bloc est protégé par la
+// Ce script pilote aussi bien la page /reglages que la page d'accueil /setup
+// (mode point d'accès). Chaque bloc est protégé par la
 // présence de ses éléments : le même fichier sert les deux pages sans erreur.
 
 async function postJson(url, payload) {

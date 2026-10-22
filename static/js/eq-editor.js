@@ -845,7 +845,10 @@
     resize();
   }
 
-  window.addEventListener('resize', resize);
+  // Sur ordinateur la courbe prend la hauteur de sa colonne : on suit la taille
+  // réelle du canvas, pas seulement celle de la fenêtre.
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
+  else window.addEventListener('resize', resize);
   // Le thème change les couleurs de la grille et de la courbe.
   new MutationObserver(draw).observe(document.body, { attributes: true, attributeFilter: ['data-theme'] });
   // La police terminal (VT323) des graduations arrive parfois après le 1er tracé.

@@ -1615,6 +1615,12 @@ def setup_page():
     return render_template("setup.html", device_name=SPEAKER_STATE["device_name"])
 
 
+@app.route("/reglages")
+def settings_page():
+    """Page Réglages : nom de l'enceinte, Wi-Fi et affichage."""
+    return render_template("settings.html", state=_shell_state())
+
+
 # ── Nom de l'enceinte ────────────────────────────────────────────────────────
 
 @app.route("/api/name", methods=["POST"])

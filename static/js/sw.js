@@ -7,13 +7,14 @@
 // le LAN, le navigateur refuse de l'enregistrer -> ce fichier reste inerte
 // jusqu'à un passage en HTTPS (voir le reverse proxy nginx dans deploy/).
 
-const CACHE = 'enceinte-shell-v3';
+const CACHE = 'enceinte-shell-v4';
 
 // La coquille : tout ce qui est nécessaire pour peindre l'écran de chargement
 // puis l'ossature de l'appli. Jamais de données (/api/...) ici.
 const SHELL = [
   '/',
   '/static/css/custom.css',
+  '/static/js/theme.js',
   '/static/js/dashboard.js',
   '/static/js/eq-editor.js',
 ];
