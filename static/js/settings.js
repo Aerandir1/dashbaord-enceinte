@@ -13,6 +13,13 @@ async function postJson(url, payload) {
   return { ok: response.ok, data };
 }
 
+// Pictos dessinés en SVG (pas d'emoji : rendu identique partout, teinté au
+// phosphore via currentColor).
+const ICON_CHECK = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">'
+  + '<path d="M3.5 12.5 6 10l3.5 3.5L18 5l2.5 2.5-11 11z"/></svg>';
+const ICON_LOCK = '<svg class="ico ico-lock" viewBox="0 0 24 24" aria-hidden="true">'
+  + '<path d="M7 10V7.5a5 5 0 0 1 10 0V10h1.5v11h-13V10zm3 0h4V7.5a2 2 0 0 0-4 0zm.5 4v4h3v-4z" fill-rule="evenodd"/></svg>';
+
 // ── Nom de l'enceinte ──────────────────────────────────────────────────────
 (function initRename() {
   const input = document.getElementById('deviceNameInput');
@@ -26,7 +33,8 @@ async function postJson(url, payload) {
     const previous = button.textContent;
     button.textContent = 'Renommage…';
     const { ok, data } = await postJson('/api/name', { name });
-    button.textContent = ok ? 'Renommé ✓' : previous;
+    if (ok) button.innerHTML = `${ICON_CHECK}<span>Renommé</span>`;
+    else button.textContent = previous;
     if (!ok) alert(data.error || 'Renommage impossible');
     setTimeout(() => { button.textContent = previous; button.disabled = false; }, 1500);
   }
@@ -51,9 +59,12 @@ async function postJson(url, payload) {
 
   function setHint(text) { if (hint) hint.textContent = text || ''; }
 
+  // Barres de signal construites, comme l'indicateur du bloc État.
   function signalIcon(signal) {
     const bars = signal >= 75 ? 4 : signal >= 50 ? 3 : signal >= 25 ? 2 : 1;
-    return '▁▃▅▇'.slice(0, bars).padEnd(4, ' ');
+    return [1, 2, 3, 4]
+      .map((i) => `<span class="wifi-bar${i <= bars ? ' active' : ''}"></span>`)
+      .join('');
   }
 
   async function refreshStatus() {
@@ -85,8 +96,8 @@ async function postJson(url, payload) {
       li.tabIndex = 0;
       li.innerHTML =
         `<span class="wifi-name">${net.ssid.replace(/</g, '&lt;')}</span>` +
-        `<span class="wifi-meta">${net.secured ? '🔒' : ''}` +
-        `<span class="wifi-signal" aria-hidden="true">${signalIcon(net.signal)}</span></span>`;
+        `<span class="wifi-meta">${net.secured ? ICON_LOCK : ''}` +
+        `<span class="wifi-indicator wifi-signal" aria-hidden="true">${signalIcon(net.signal)}</span></span>`;
       const choose = () => selectNetwork(net, li);
       li.addEventListener('click', choose);
       li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); } });

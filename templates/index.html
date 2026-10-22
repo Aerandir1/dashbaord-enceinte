@@ -171,11 +171,12 @@
           <p class="np-source">Source : <strong id="playbackSource">{{ state.active_service_name }}</strong></p>
         </div>
         <div class="controls">
-          <button class="btn icon-btn" data-playback="previous" aria-label="Précédent">⏮</button>
-          <button class="btn primary icon-btn" id="playBtn" data-playback="toggle" aria-label="Lecture/Pause">
-            {{ '⏸' if state.is_playing else '▶' }}
+          <button class="btn icon-btn" data-playback="previous" aria-label="Précédent"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h3v14H5zM19 5v14L9 12z"/></svg></button>
+          <button class="btn primary icon-btn{{ ' is-playing' if state.is_playing else '' }}" id="playBtn" data-playback="toggle" aria-label="Lecture/Pause">
+            <svg class="ico ico-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15L19.5 12z"/></svg>
+            <svg class="ico ico-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4.5v14H6zM13.5 5H18v14h-4.5z"/></svg>
           </button>
-          <button class="btn icon-btn" data-playback="next" aria-label="Suivant">⏭</button>
+          <button class="btn icon-btn" data-playback="next" aria-label="Suivant"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h3v14h-3zM5 5v14l10-7z"/></svg></button>
         </div>
       </article>
 
@@ -191,8 +192,8 @@
         </div>
         <p class="vol-readout"><strong id="volumeValue">{{ state.volume }}</strong><span>%</span></p>
         <div class="vol-actions">
-          <button class="btn icon-btn" id="volDown" aria-label="Baisser le volume">−</button>
-          <button class="btn icon-btn" id="volUp" aria-label="Monter le volume">+</button>
+          <button class="btn icon-btn" id="volDown" aria-label="Baisser le volume"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10.5h14v3H5z"/></svg></button>
+          <button class="btn icon-btn" id="volUp" aria-label="Monter le volume"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 5h3v5.5H19v3h-5.5V19h-3v-5.5H5v-3h5.5z"/></svg></button>
           <button class="btn" id="muteBtn">{{ 'Activer le son' if state.muted else 'Muet' }}</button>
         </div>
       </article>
@@ -272,7 +273,7 @@
         </div>
 
         <div class="eq-bands" id="eqBands" aria-label="Bandes">
-          <button type="button" class="eq-band-add" id="eqAdd" title="Ajouter une bande" aria-label="Ajouter une bande">+</button>
+          <button type="button" class="eq-band-add" id="eqAdd" title="Ajouter une bande" aria-label="Ajouter une bande"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 5h3v5.5H19v3h-5.5V19h-3v-5.5H5v-3h5.5z"/></svg></button>
         </div>
 
         <div class="eq-stage" id="eqStage">

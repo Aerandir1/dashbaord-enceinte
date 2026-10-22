@@ -343,6 +343,22 @@ body.is-playing .brand-mark svg { animation: gearSpin 9s linear infinite; }
 .btn.ghost { border-style: dashed; }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; background: transparent; color: var(--fg); }
 
+/* Pictos SVG maison (formes pleines, angles droits), teintés au phosphore. */
+.ico {
+  display: block;
+  width: 22px; height: 22px;
+  flex: none;
+  fill: currentColor;
+  filter: drop-shadow(0 0 3px rgba(var(--fg-rgb), 0.6));
+}
+.btn:hover .ico, .btn.primary .ico, .wifi-item.selected .ico { filter: none; }
+#playBtn .ico { width: 28px; height: 28px; }
+#playBtn .ico-pause,
+#playBtn.is-playing .ico-play { display: none; }
+#playBtn.is-playing .ico-pause { display: block; }
+.eq-band-add .ico { width: 16px; height: 16px; }
+.ico-lock { width: 16px; height: 16px; }
+
 .icon-btn {
   width: 48px; min-width: 48px; height: 48px;
   padding: 0;
@@ -996,7 +1012,9 @@ body.is-playing .np-scope .wave-b { animation: scopeB 2.7s linear infinite; }
 .wifi-item.active .wifi-name::after { content: " [CONNECTÉ]"; font-size: 0.8rem; }
 .wifi-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wifi-meta { display: flex; align-items: center; gap: 8px; color: var(--fg-dim); }
-.wifi-signal { font-family: var(--font-mono); letter-spacing: 1px; }
+.wifi-signal { height: 13px; }
+.wifi-item.selected .wifi-bar { background: rgba(0, 0, 0, 0.3); box-shadow: none; }
+.wifi-item.selected .wifi-bar.active { background: var(--screen); }
 .wifi-empty { color: var(--fg-dim); padding: 8px 10px; font-size: 0.9rem; }
 .wifi-connect-row { margin-top: 12px; }
 

@@ -225,7 +225,8 @@ function render(state) {
   });
 
   const playBtn = document.getElementById('playBtn');
-  playBtn.textContent = state.is_playing ? '⏸' : '▶';
+  // Les deux pictos sont dans le bouton ; la classe choisit lequel s'affiche.
+  playBtn.classList.toggle('is-playing', Boolean(state.is_playing));
   playBtn.setAttribute('aria-label', state.is_playing ? 'Pause' : 'Lecture');
   playBtn.setAttribute('title', state.is_playing ? 'Pause' : 'Lecture');
   document.getElementById('muteBtn').textContent = state.muted ? 'Activer le son' : 'Muet';
