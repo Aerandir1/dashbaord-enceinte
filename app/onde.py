@@ -23,7 +23,7 @@ import threading
 
 from flask import Blueprint, Response, jsonify, request, stream_with_context
 
-from app import airplay, views
+from app import airplay, outputs, views
 from app.config import ONDE_ID_FILE, ONDE_KEY
 
 VERSION = 1
@@ -100,7 +100,8 @@ SPEAKER_ID = _load_id()
 
 
 def _model():
-    dac = views._get_dac_name()
+    # La sortie choisie (HiFiBerry, jack, HDMI), pas la premiere carte venue.
+    dac = (outputs.active_output() or {}).get("label") or views._get_dac_name()
     return f"Raspberry Pi · {dac}" if dac else "Raspberry Pi"
 
 
