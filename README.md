@@ -40,3 +40,9 @@ Variables principales:
 - `templates/` : pages HTML
 - `static/` : CSS, JS, images
 - `run.py` : point d'entrée
+
+## Pilotage par Domus (protocole Onde)
+
+L'enceinte parle **Onde** (`/onde/v1`) : Domus la découvre par mDNS et pilote volume,
+lecture, source, et affiche le titre et la pochette en direct. Spécification et notes
+d'implémentation : [ONDE.md](ONDE.md).

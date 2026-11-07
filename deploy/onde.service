@@ -1,0 +1,16 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!--
+  Annonce mDNS du protocole Onde (voir ONDE.md) : Domus decouvre l'enceinte
+  sans qu'on saisisse son adresse. %h est le nom d'hote, qui suit le nom donne
+  a l'enceinte dans les reglages. Le port est celui du dashboard (FLASK_PORT).
+-->
+<service-group>
+  <name replace-wildcards="yes">%h</name>
+  <service>
+    <type>_onde._tcp</type>
+    <port>@ONDE_PORT@</port>
+    <txt-record>v=1</txt-record>
+    <txt-record>path=/onde/v1</txt-record>
+  </service>
+</service-group>

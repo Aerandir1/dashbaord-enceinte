@@ -19,6 +19,39 @@ case "${PLAYER_EVENT:-}" in
         ;;
 esac
 
+# Lecture / pause : seul l'etat change, on le note dans le fichier existant
+# (le protocole Onde en a besoin : la carte son, toujours ouverte par
+# CamillaDSP, ne dit pas si la musique est en pause).
+case "${PLAYER_EVENT:-}" in
+    playing|paused|started)
+        [ -f "$OUT" ] || exit 0
+        python3 - "$OUT" "${PLAYER_EVENT}" <<'PY'
+import json
+import os
+import sys
+import tempfile
+
+path, event = sys.argv[1], sys.argv[2]
+try:
+    with open(path, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+except (OSError, ValueError):
+    sys.exit(0)
+payload["playback"] = "paused" if event == "paused" else "playing"
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", prefix=".spotify-metadata.")
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, path)
+except BaseException:
+    os.unlink(tmp)
+    raise
+PY
+        exit 0
+        ;;
+esac
+
 # Evenement sans metadonnees (volume_changed, position_correction...) :
 # rien a publier, on conserve l'etat precedent.
 [ -n "${NAME:-}" ] || exit 0
@@ -48,6 +81,10 @@ def _int(name):
         return None
 
 
+# Pochettes (librespot >= 0.5) : URL i.scdn.co, une par ligne, de la plus
+# grande a la plus petite selon les versions ; on garde la premiere.
+covers = [c.strip() for c in os.environ.get("COVERS", "").splitlines() if c.strip()]
+
 payload = {
     "title": os.environ.get("NAME") or None,
     "artist": ", ".join(artists) or None,
@@ -55,6 +92,8 @@ payload = {
     "duration_ms": _int("DURATION_MS"),
     "uri": os.environ.get("URI") or None,
     "event": os.environ.get("PLAYER_EVENT") or None,
+    "cover_url": covers[0] if covers else None,
+    "playback": "playing",
     "updated_at": datetime.now(timezone.utc).isoformat(),
 }
 

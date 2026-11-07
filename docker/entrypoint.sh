@@ -18,6 +18,12 @@ if id avahi >/dev/null 2>&1; then
     chown avahi:avahi /run/avahi-daemon 2>/dev/null || true
 fi
 
+# Annonce mDNS du protocole Onde (voir ONDE.md), sur le port du dashboard.
+if [ -f /etc/avahi/onde.service.in ]; then
+    mkdir -p /etc/avahi/services
+    sed "s/@ONDE_PORT@/${FLASK_PORT:-5000}/" /etc/avahi/onde.service.in > /etc/avahi/services/onde.service
+fi
+
 # Génération de la configuration shairport-sync à partir des variables d'env.
 # Le pipe de métadonnées est lu par le dashboard (SHAIRPORT_METADATA_PIPE).
 cat > /etc/shairport-sync.conf <<EOF

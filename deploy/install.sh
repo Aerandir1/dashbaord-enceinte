@@ -119,6 +119,12 @@ AIRPLAY_NAME="$(read_env AIRPLAY_NAME "$(read_env SPOTIFY_NAME Enceinte)")"
 ALSA_DEVICE="$(read_env ALSA_DEVICE default)"
 FLASK_PORT="$(read_env FLASK_PORT 5001)"
 
+# Annonce mDNS du protocole Onde : Domus trouve l'enceinte tout seul (voir
+# ONDE.md). Le port suit FLASK_PORT ; avahi recharge ses services a chaud.
+install -d /etc/avahi/services
+sed "s/@ONDE_PORT@/${FLASK_PORT}/" "${DEPLOY_DIR}/onde.service" > /etc/avahi/services/onde.service
+chmod 0644 /etc/avahi/services/onde.service
+
 # --- Peripherique ALSA partage (dmix) ---------------------------------------
 # Un acces direct au materiel (hw:N) est EXCLUSIF : le premier des deux
 # services qui ouvre la carte rend l'autre muet. On passe par dmix, cale sur

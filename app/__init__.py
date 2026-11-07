@@ -22,3 +22,7 @@ def _static_version(endpoint, values):
 
 
 from app import views  # noqa: E402,F401
+from app import onde  # noqa: E402
+
+# Protocole Onde (/onde/v1) : c'est par lui que Domus decouvre et pilote l'enceinte.
+app.register_blueprint(onde.bp)

@@ -64,3 +64,10 @@ HOTSPOT_PASSWORD = os.getenv("HOTSPOT_PASSWORD", "enceinte-setup")
 # Marqueur pose par le helper quand le point d'acces est actif : sert au portail
 # captif a savoir s'il doit rediriger les sondes de connectivite.
 HOTSPOT_MARKER_FILE = os.getenv("HOTSPOT_MARKER_FILE", "/run/enceinte/hotspot-active")
+# --- Onde : protocole de pilotage par Domus (voir ONDE.md) ---
+# Identifiant stable de l'enceinte, tire au premier demarrage.
+ONDE_ID_FILE = os.getenv("ONDE_ID_FILE", "/etc/camilladsp/onde.json")
+# Cle facultative : si elle est renseignee, toutes les routes Onde sauf /hello
+# exigent « Authorization: Bearer <cle> ». Vide = reseau local de confiance,
+# comme le dashboard lui-meme.
+ONDE_KEY = os.getenv("ONDE_KEY", "").strip()

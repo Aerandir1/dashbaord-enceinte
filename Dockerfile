@@ -58,6 +58,7 @@ COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/librespot-run.sh /usr/local/bin/librespot-run.sh
 COPY docker/rt-exec.sh /usr/local/bin/rt-exec.sh
+COPY deploy/onde.service /etc/avahi/onde.service.in
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/librespot-run.sh /usr/local/bin/rt-exec.sh
 
 # Valeurs par défaut : pilotage des services via supervisor dans le conteneur.
