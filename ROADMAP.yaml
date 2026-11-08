@@ -159,3 +159,13 @@ nodes:
       - L'installation native (deploy/install.sh, /etc/default/enceinte et ses variables) est documentée
       - README_DOCKER.md est mis à jour ou marqué obsolète
       - FONCTIONNALITES-A-VENIR.txt est fusionné dans la documentation ou remplacé par la roadmap
+  - id: potar-de-son-lineaire
+    title: Potar de son linéaire
+    status: todo
+    depends_on: [carte-partagee-dmix]
+    category: backend
+    scope: Potar volume, pas front end
+    goal: "Aujourd'hui le volume dans sur la plage 0% : 50% est inaudible, je pense que le potar de volume est exponentiel"
+    implementation:
+      - Modifier la fonction, linéariser la fonction, je sais pas trop ce qui est possible de faire mais toute les enceinte actuel on un volume linaire en focntion du potar donc c'est possible
+    phase: phase-1
