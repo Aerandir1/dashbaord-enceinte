@@ -161,7 +161,7 @@ nodes:
       - FONCTIONNALITES-A-VENIR.txt est fusionné dans la documentation ou remplacé par la roadmap
   - id: potar-de-son-lineaire
     title: Potar de son linéaire
-    status: todo
+    status: in_progress
     depends_on: [carte-partagee-dmix]
     category: backend
     scope: Potar volume, pas front end
