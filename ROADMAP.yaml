@@ -1,0 +1,161 @@
+version: 1
+project: projet-enceinte
+description: Tableau de bord Flask et chaîne audio d'une enceinte connectée maison sur Raspberry Pi (Spotify, AirPlay, égaliseur CamillaDSP), pilotable par Domus via le protocole Onde.
+phases:
+  - id: phase-1
+    title: Socle audio et déploiement sur le Pi
+  - id: phase-2
+    title: Sources, métadonnées et égaliseur
+  - id: phase-3
+    title: Réglages de l'enceinte et interface
+  - id: phase-4
+    title: Intégration Domus et nouvelles sources
+  - id: phase-5
+    title: Fiabilité et documentation
+nodes:
+  - id: dashboard-flask
+    title: Tableau de bord Flask (lecture, volume, sourdine)
+    status: done
+    depends_on: []
+    phase: phase-1
+    category: backend
+    goal: Piloter l'enceinte depuis un navigateur du réseau local.
+
+  - id: deploiement-natif-systemd
+    title: Installation native systemd et serveur waitress
+    status: done
+    depends_on: [dashboard-flask]
+    phase: phase-1
+    category: infra
+    goal: Faire tourner le dashboard et les services audio sur le Pi sans Docker, de façon stable et sans craquements.
+
+  - id: carte-partagee-dmix
+    title: Carte son partagée (dmix) et sortie HiFiBerry ou jack
+    status: done
+    depends_on: [deploiement-natif-systemd]
+    phase: phase-1
+    category: infra
+    goal: Permettre à plusieurs services audio de coexister et choisir la sortie physique.
+
+  - id: source-spotify
+    title: Spotify Connect avec métadonnées réelles (librespot --onevent)
+    status: done
+    depends_on: [carte-partagee-dmix]
+    phase: phase-2
+    category: integration
+    goal: Diffuser Spotify et afficher titre, artiste et pochette dans le tableau de bord.
+
+  - id: source-airplay
+    title: AirPlay avec métadonnées et contrôle via MPRIS
+    status: done
+    depends_on: [carte-partagee-dmix]
+    phase: phase-2
+    category: integration
+    goal: Diffuser AirPlay et piloter lecture, pause et piste suivante depuis le tableau de bord.
+
+  - id: selecteur-source-unique
+    title: Une seule source active à la fois, avec sélecteur dédié
+    status: done
+    depends_on: [source-spotify, source-airplay]
+    phase: phase-2
+    category: backend
+    goal: Éviter que les deux services audio se disputent la carte son en boucle.
+
+  - id: chaine-camilladsp
+    title: Chaîne audio CamillaDSP avec garde-fou de validation
+    status: done
+    depends_on: [carte-partagee-dmix]
+    phase: phase-2
+    category: backend
+    goal: Faire passer tout le son par un DSP pour y appliquer un traitement.
+
+  - id: eq-parametrique
+    title: Égaliseur paramétrique avec éditeur de courbe et potards
+    status: done
+    depends_on: [chaine-camilladsp]
+    phase: phase-2
+    category: ui
+    goal: Régler finement le rendu sonore de l'enceinte depuis l'interface.
+
+  - id: reglages-nom-wifi
+    title: Renommer l'enceinte et changer de réseau Wi-Fi
+    status: done
+    depends_on: [deploiement-natif-systemd]
+    phase: phase-3
+    category: backend
+    goal: Configurer l'enceinte sans SSH, avec un nom répercuté sur Spotify, AirPlay et mDNS.
+
+  - id: portail-captif
+    title: Point d'accès et portail de configuration au premier démarrage
+    status: done
+    depends_on: [reglages-nom-wifi]
+    phase: phase-3
+    category: infra
+    goal: Mettre une enceinte neuve en réseau sans clavier ni écran (optionnel, ENABLE_SETUP_HOTSPOT).
+
+  - id: ui-pipboy
+    title: Interface façon Pip-Boy, plein écran et pictogrammes SVG
+    status: done
+    depends_on: [dashboard-flask]
+    phase: phase-3
+    category: ui
+    goal: Donner au tableau de bord une identité visuelle soignée, sur mobile comme sur ordinateur.
+
+  - id: protocole-onde-v1
+    title: Protocole Onde v1 (hello, state, command, events, cover, mDNS)
+    status: done
+    depends_on: [selecteur-source-unique, source-spotify, source-airplay]
+    phase: phase-4
+    category: api
+    goal: Faire découvrir et piloter l'enceinte par Domus avec un protocole stable et documenté.
+
+  - id: source-music-assistant
+    title: Music Assistant / Squeezelite comme vraie source
+    status: todo
+    depends_on: [selecteur-source-unique]
+    phase: phase-4
+    category: integration
+    goal: Ajouter une quatrième source alimentée par la bibliothèque musicale locale, aujourd'hui seulement annoncée « Bientôt ».
+    done_when:
+      - Squeezelite est installé par deploy/install.sh et sort le son par la chaîne CamillaDSP
+      - Choisir Music Assistant dans le sélecteur arrête Spotify et AirPlay, et inversement
+      - Le tableau de bord et /onde/v1/state affichent titre, artiste et pochette de la piste Music Assistant
+      - La mention « Bientôt » a disparu du sélecteur
+
+  - id: onde-sync-multiroom
+    title: Lecture synchronisée multiroom (fonction Onde « sync », Snapcast)
+    status: todo
+    depends_on: [protocole-onde-v1]
+    phase: phase-4
+    category: integration
+    goal: Jouer le même son en synchro sur plusieurs enceintes pilotées par Domus.
+    done_when:
+      - La fonction sync est spécifiée dans ONDE.md (et dans docs/onde.md côté Domus)
+      - Un client Snapcast installé sur l'enceinte peut être activé comme source depuis Onde
+      - Deux enceintes jouent le même flux sans décalage audible
+
+  - id: tests-backend
+    title: Tests automatisés du backend (Onde, EQ, sources)
+    status: todo
+    depends_on: [protocole-onde-v1, eq-parametrique]
+    phase: phase-5
+    category: tests
+    goal: Repérer les régressions avant de déployer sur le Pi, en simulant les dépendances système.
+    done_when:
+      - Une suite pytest tourne sur un poste sans matériel, en simulant ALSA, systemd, busctl et CamillaDSP
+      - Les routes /onde/v1 sont couvertes (état, chaque commande, erreurs typées, clé d'accès)
+      - La génération et la validation de la config CamillaDSP sont testées
+      - La suite passe en CI à chaque push
+
+  - id: doc-a-jour
+    title: README et documentation d'installation à jour
+    status: todo
+    depends_on: [deploiement-natif-systemd]
+    phase: phase-5
+    category: docs
+    goal: Faire décrire au README le projet réel au lieu de la simulation d'origine.
+    done_when:
+      - Le README ne parle plus de simulation, de spectre FFT ni d'EQ 5 bandes
+      - L'installation native (deploy/install.sh, /etc/default/enceinte et ses variables) est documentée
+      - README_DOCKER.md est mis à jour ou marqué obsolète
+      - FONCTIONNALITES-A-VENIR.txt est fusionné dans la documentation ou remplacé par la roadmap
