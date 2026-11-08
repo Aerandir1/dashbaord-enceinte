@@ -645,6 +645,15 @@ def _amixer_command(*args):
     return command
 
 
+# -M : volume "mappé", la courbe perceptive d'alsamixer (et de PulseAudio /
+# PipeWire). Sans elle, amixer répartit le pourcentage linéairement sur les
+# valeurs brutes du registre : sur le "Digital" du HiFiBerry (-103,5 à 0 dB),
+# 50 % valait environ -52 dB, d'où une moitié basse du potar inaudible. Avec -M,
+# 50 % vaut environ -18 dB et chaque cran du potar s'entend. À utiliser pour
+# lire ET écrire, sinon le curseur saute après chaque réglage.
+_AMIXER_MAPPED_VOLUME = "-M"
+
+
 def _alsa_control_has_volume(name):
     ok, stdout, _stderr = _run_command(_amixer_command("get", name))
     # Un contrôle utilisable expose un volume de lecture en pourcentage.
@@ -715,7 +724,7 @@ def _read_system_volume():
         if not control:
             return None, None, "Aucun contrôle de volume ALSA détecté"
 
-        ok, stdout, stderr = _run_command(_amixer_command("get", control))
+        ok, stdout, stderr = _run_command(_amixer_command(_AMIXER_MAPPED_VOLUME, "get", control))
         if not ok:
             return None, None, stderr
 
@@ -764,7 +773,7 @@ def _set_system_volume(volume=None, mute=None):
             mute = None
 
         if target_volume is not None:
-            commands.append(_amixer_command("-q", "set", control, f"{target_volume}%"))
+            commands.append(_amixer_command("-q", _AMIXER_MAPPED_VOLUME, "set", control, f"{target_volume}%"))
         if mute is not None:
             commands.append(_amixer_command("-q", "set", control, "mute" if mute else "unmute"))
 
