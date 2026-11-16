@@ -169,3 +169,18 @@ nodes:
     implementation:
       - Modifier la fonction, linéariser la fonction, je sais pas trop ce qui est possible de faire mais toute les enceinte actuel on un volume linaire en focntion du potar donc c'est possible
     phase: phase-1
+  - id: go-librespot-volume-jumeau
+    title: 'go-librespot expérimental : volume jumeau dashboard ↔ Spotify Connect'
+    status: in_progress
+    depends_on: []
+    category: feature
+    goal: Synchroniser dans les deux sens le potar du dashboard et le volume Spotify Connect, en proposant go-librespot comme alternative expérimentale à librespot au moment de l'installation.
+    implementation:
+      - 'install.sh : choix librespot / go-librespot (option, variable ou question)'
+      - Unité go-librespot installée sous le nom librespot.service (sudoers, Conflicts, netctl inchangés)
+      - "external_volume : go-librespot n'applique pas le volume, le dashboard reste le seul étage"
+      - 'app/golibrespot.py : websocket /events -> mixeur système + métadonnées ; potar -> POST /player/volume'
+    done_when:
+      - Tourner le potar du dashboard déplace le curseur de l'appli Spotify
+      - Changer le volume dans l'appli Spotify déplace le potar du dashboard
+      - L'installation par défaut (librespot) est inchangée
