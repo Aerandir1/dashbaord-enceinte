@@ -3,15 +3,33 @@
 # Installation native (sans Docker) de l'enceinte :
 #   - shairport-sync (AirPlay)   -> service systemd, ordonnancement temps reel
 #   - librespot (Spotify Connect)-> service systemd, PAS de temps reel
+#     (ou go-librespot, EXPERIMENTAL : volume synchronise avec l'appli Spotify)
 #   - dashboard web              -> service systemd
 #
 # Idempotent : relancer le script met simplement a jour l'installation.
-# Usage :  sudo ./deploy/install.sh
+# Usage :  sudo ./deploy/install.sh [--spotify=librespot|go-librespot]
+#   Sans --spotify, le script pose la question (ou garde le choix precedent
+#   s'il n'est pas lance dans un terminal).
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEPLOY_DIR="${APP_DIR}/deploy"
 ENV_FILE="/etc/default/enceinte"
+
+# go-librespot : version figee, une mise a jour reste un choix delibere.
+GO_LIBRESPOT_VERSION="${GO_LIBRESPOT_VERSION:-v0.10.5}"
+
+SPOTIFY_BACKEND_ARG=""
+for arg in "$@"; do
+    case "$arg" in
+        --spotify=*) SPOTIFY_BACKEND_ARG="${arg#--spotify=}" ;;
+        -h|--help)
+            sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        *) echo "Option inconnue : ${arg} (voir --help)" >&2; exit 1 ;;
+    esac
+done
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "Ce script doit etre lance avec sudo." >&2
@@ -26,6 +44,43 @@ if [ "$RUN_USER" = "root" ]; then
 fi
 
 echo "==> Installation dans ${APP_DIR} pour l'utilisateur ${RUN_USER}"
+
+# Lecture d'une valeur du fichier d'environnement (vide s'il n'existe pas).
+# On ne source PAS le fichier : systemd accepte "NOM=Enceinte Salon" sans
+# guillemets, mais le shell y verrait la commande "Salon".
+read_env() {
+    local key="$1" default="$2" val
+    val="$(sed -n "s/^[[:space:]]*${key}=//p" "$ENV_FILE" 2>/dev/null | tail -n 1)"
+    val="${val%\"}"; val="${val#\"}"
+    val="${val%\'}"; val="${val#\'}"
+    printf '%s' "${val:-$default}"
+}
+
+# --- 0. Choix de l'implementation Spotify Connect ---------------------------
+# Priorite : --spotify=, puis SPOTIFY_BACKEND dans l'environnement
+# (sudo SPOTIFY_BACKEND=go-librespot ./deploy/install.sh), puis la question
+# en mode interactif, puis le choix de l'installation precedente.
+PREVIOUS_BACKEND="$(read_env SPOTIFY_BACKEND librespot)"
+SPOTIFY_BACKEND="${SPOTIFY_BACKEND_ARG:-${SPOTIFY_BACKEND:-}}"
+if [ -z "$SPOTIFY_BACKEND" ] && [ -t 0 ]; then
+    case "$PREVIOUS_BACKEND" in go-librespot) default_choice=2 ;; *) default_choice=1 ;; esac
+    echo
+    echo "Implementation Spotify Connect :"
+    echo "  1) librespot     -- eprouvee ; volume Spotify independant du potar du dashboard"
+    echo "  2) go-librespot  -- EXPERIMENTAL ; potar du dashboard et volume Spotify synchronises"
+    read -r -p "Choix [${default_choice}] : " choice
+    case "${choice:-$default_choice}" in
+        1) SPOTIFY_BACKEND="librespot" ;;
+        2) SPOTIFY_BACKEND="go-librespot" ;;
+        *) echo "Choix invalide : ${choice}" >&2; exit 1 ;;
+    esac
+fi
+SPOTIFY_BACKEND="${SPOTIFY_BACKEND:-$PREVIOUS_BACKEND}"
+case "$SPOTIFY_BACKEND" in
+    librespot|go-librespot) ;;
+    *) echo "SPOTIFY_BACKEND invalide : ${SPOTIFY_BACKEND} (librespot ou go-librespot)" >&2; exit 1 ;;
+esac
+echo "==> Spotify Connect : ${SPOTIFY_BACKEND}"
 
 # --- 1. Arret de l'ancienne pile Docker si elle tourne -----------------------
 if command -v docker >/dev/null 2>&1; then
@@ -46,10 +101,40 @@ apt-get install -y --no-install-recommends \
     curl ca-certificates \
     libasound2 libpulse0
 
-# --- 3. librespot ------------------------------------------------------------
+# --- 3. librespot / go-librespot --------------------------------------------
+if [ "$SPOTIFY_BACKEND" = "go-librespot" ]; then
+    # Binaire officiel des releases GitHub ; il ne depend que de libasound2.
+    # Le fichier .version permet de mettre a jour quand GO_LIBRESPOT_VERSION
+    # change, sans retelecharger a chaque installation.
+    GO_VERSION_FILE=/usr/local/lib/go-librespot.version
+    if [ ! -x /usr/local/bin/go-librespot ] \
+        || [ "$(cat "$GO_VERSION_FILE" 2>/dev/null)" != "$GO_LIBRESPOT_VERSION" ]; then
+        echo "==> Installation de go-librespot ${GO_LIBRESPOT_VERSION} (experimental)"
+        case "$(dpkg --print-architecture)" in
+            arm64) GO_ASSET="go-librespot_linux_arm64.tar.gz" ;;
+            # Build ARMv6 pour Raspberry Pi : fonctionne aussi sur Pi 2/3 en 32 bits.
+            armhf) GO_ASSET="go-librespot_linux_armv6_rpi.tar.gz" ;;
+            amd64) GO_ASSET="go-librespot_linux_x86_64.tar.gz" ;;
+            *) echo "Architecture $(dpkg --print-architecture) non geree par go-librespot." >&2; exit 1 ;;
+        esac
+        GO_TMP="$(mktemp -d)"
+        curl -fsSL "https://github.com/devgianlu/go-librespot/releases/download/${GO_LIBRESPOT_VERSION}/${GO_ASSET}" \
+            -o "${GO_TMP}/go-librespot.tar.gz"
+        tar -xzf "${GO_TMP}/go-librespot.tar.gz" -C "$GO_TMP" go-librespot
+        install -m 0755 "${GO_TMP}/go-librespot" /usr/local/bin/go-librespot
+        install -d /usr/local/lib
+        printf '%s\n' "$GO_LIBRESPOT_VERSION" > "$GO_VERSION_FILE"
+        rm -rf "$GO_TMP"
+    else
+        echo "==> go-librespot ${GO_LIBRESPOT_VERSION} deja present"
+    fi
+fi
+
 # Le depot raspotify ne publie pas de paquet "librespot" autonome : on extrait
 # le binaire du paquet raspotify, sans installer sa dependance systemd/config.
-if [ ! -x /usr/local/bin/librespot ]; then
+if [ "$SPOTIFY_BACKEND" != "librespot" ]; then
+    :  # librespot n'est pas utilise.
+elif [ ! -x /usr/local/bin/librespot ]; then
     echo "==> Installation du binaire librespot"
     ARCH="$(dpkg --print-architecture)"
     PKGS_URL="https://dtcooper.github.io/raspotify/dists/raspotify/main/binary-${ARCH}/Packages"
@@ -104,16 +189,12 @@ else
     done < "${DEPLOY_DIR}/enceinte.env"
 fi
 
-# Lecture des valeurs necessaires a la config shairport-sync.
-# On ne source PAS le fichier : systemd accepte "NOM=Enceinte Salon" sans
-# guillemets, mais le shell y verrait la commande "Salon".
-read_env() {
-    local key="$1" default="$2" val
-    val="$(sed -n "s/^[[:space:]]*${key}=//p" "$ENV_FILE" | tail -n 1)"
-    val="${val%\"}"; val="${val#\"}"
-    val="${val%\'}"; val="${val#\'}"
-    printf '%s' "${val:-$default}"
-}
+# Choix de l'etape 0, relu par le dashboard (SPOTIFY_BACKEND) au demarrage.
+if grep -q "^SPOTIFY_BACKEND=" "$ENV_FILE"; then
+    sed -i "s|^SPOTIFY_BACKEND=.*|SPOTIFY_BACKEND=${SPOTIFY_BACKEND}|" "$ENV_FILE"
+else
+    printf 'SPOTIFY_BACKEND=%s\n' "$SPOTIFY_BACKEND" >> "$ENV_FILE"
+fi
 
 AIRPLAY_NAME="$(read_env AIRPLAY_NAME "$(read_env SPOTIFY_NAME Enceinte)")"
 ALSA_DEVICE="$(read_env ALSA_DEVICE default)"
@@ -340,8 +421,26 @@ install -m 0644 "${DEPLOY_DIR}/shairport-sync-override.conf" \
 
 # --- 7. Unites systemd -------------------------------------------------------
 echo "==> Installation des unites systemd"
+# Les deux implementations s'installent sous le MEME nom (librespot.service) :
+# sudoers, Conflicts= de shairport-sync, helper de renommage et dashboard
+# n'ont pas a savoir laquelle tourne.
+if [ "$SPOTIFY_BACKEND" = "go-librespot" ]; then
+    SPOTIFY_UNIT_SRC="${DEPLOY_DIR}/go-librespot.service"
+    # config.yml est regenere a chaque installation ; state.json (identifiants
+    # Spotify), a cote, n'est jamais touche.
+    install -d -o "$RUN_USER" -g "$RUN_USER" -m 0750 /var/lib/go-librespot
+    install -o "$RUN_USER" -g "$RUN_USER" -m 0640 \
+        "${DEPLOY_DIR}/go-librespot.yml" /var/lib/go-librespot/config.yml
+else
+    SPOTIFY_UNIT_SRC="${DEPLOY_DIR}/librespot.service"
+fi
+# Un changement d'implementation doit arreter l'ancien processus avant que le
+# nouveau ne demarre (meme nom d'unite, binaire different).
+if [ "$SPOTIFY_BACKEND" != "$PREVIOUS_BACKEND" ]; then
+    systemctl stop librespot >/dev/null 2>&1 || true
+fi
 sed -e "s|@RUN_USER@|${RUN_USER}|g" -e "s|@APP_DIR@|${APP_DIR}|g" \
-    "${DEPLOY_DIR}/librespot.service" > /etc/systemd/system/librespot.service
+    "$SPOTIFY_UNIT_SRC" > /etc/systemd/system/librespot.service
 sed -e "s|@RUN_USER@|${RUN_USER}|g" -e "s|@APP_DIR@|${APP_DIR}|g" \
     "${DEPLOY_DIR}/dashboard-enceinte.service" > /etc/systemd/system/dashboard-enceinte.service
 

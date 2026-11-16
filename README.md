@@ -34,9 +34,24 @@ Variables principales:
 - `FLASK_DEBUG` (`true`/`false`)
 - `FLASK_SSL` (`true`/`false`, défaut `true`)
 - `SECRET_KEY`
+- `SPOTIFY_BACKEND` : `librespot` (défaut) ou `go-librespot` (expérimental, voir ci-dessous)
+- `GO_LIBRESPOT_PORT` : port de l'API locale de go-librespot (défaut `3678`)
+
+## Spotify Connect : librespot ou go-librespot (expérimental)
+
+L'installeur (`sudo ./deploy/install.sh`) demande quelle implémentation installer, ou la prend
+de `--spotify=librespot|go-librespot` :
+
+- **librespot** (défaut, éprouvé) : le volume de l'appli Spotify est indépendant du potar du dashboard.
+- **go-librespot** (expérimental) : le potar du dashboard et le volume Spotify sont **jumeaux**.
+  Tourner l'un fait bouger l'autre. go-librespot tourne en `external_volume`, donc le mixeur du
+  dashboard reste le seul étage de volume, et `app/golibrespot.py` synchronise les deux sens par
+  l'API locale de go-librespot (websocket `/events` et `POST /player/volume`).
+
+Détails, fichiers installés et logs : [README_RASPBERRY.md, section 10](README_RASPBERRY.md).
 
 ## Arborescence
-- `app/` : backend Flask (routes, état)
+- `app/` : backend Flask (routes, état) ; `app/golibrespot.py` : pont go-librespot (volume jumeau)
 - `templates/` : pages HTML
 - `static/` : CSS, JS, images
 - `run.py` : point d'entrée

@@ -38,6 +38,14 @@ LIBRESPOT_METADATA_FILE = os.getenv(
     "LIBRESPOT_METADATA_FILE", "/run/enceinte/spotify-metadata.json"
 )
 
+# Implementation Spotify Connect choisie a l'installation :
+#   librespot     (defaut) : volume Spotify independant du potar du dashboard ;
+#   go-librespot  (EXPERIMENTAL) : API locale, volume jumeau dans les deux sens
+#                 (voir app/golibrespot.py). L'unite systemd garde le nom
+#                 LIBRESPOT_SERVICE dans les deux cas.
+SPOTIFY_BACKEND = os.getenv("SPOTIFY_BACKEND", "librespot").strip().lower()
+GO_LIBRESPOT_PORT = int(os.getenv("GO_LIBRESPOT_PORT", "3678"))
+
 # Gestionnaire de services utilisé pour piloter librespot / shairport-sync.
 # "systemd" (Raspberry Pi natif) ou "supervisor" (conteneur Docker).
 SERVICE_MANAGER = os.getenv("SERVICE_MANAGER", "systemd").strip().lower()

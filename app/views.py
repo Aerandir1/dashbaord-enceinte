@@ -22,11 +22,12 @@ try:
 except Exception:  # pragma: no cover
     sd = None
 
-from app import app, airplay, eq, netctl, outputs
+from app import app, airplay, eq, golibrespot, netctl, outputs
 from app.config import (
     ALSA_MIXER_CARD,
     ALSA_MIXER_CONTROL,
     DEVICE_NAME_FILE,
+    GO_LIBRESPOT_PORT,
     HOTSPOT_MARKER_FILE,
     LIBRESPOT_METADATA_FILE,
     LIBRESPOT_SERVICE,
@@ -37,6 +38,7 @@ from app.config import (
     SHAIRPORT_SYNC_SERVICE,
     SHAIRPORT_SYNC_SYSTEMD_USER,
     SHAIRPORT_SYNC_USE_SUDO,
+    SPOTIFY_BACKEND,
     SUPERVISORCTL_BIN,
     SUPERVISORD_CONFIG,
 )
@@ -234,10 +236,16 @@ SERVICE_BACKENDS = {
         "unit": LIBRESPOT_SERVICE,
         "systemd_user": LIBRESPOT_SYSTEMD_USER,
         "use_sudo": LIBRESPOT_USE_SUDO,
-        "label": "librespot",
-        "process_name": "librespot",
+        "label": SPOTIFY_BACKEND if SPOTIFY_BACKEND == "go-librespot" else "librespot",
+        "process_name": "go-librespot" if SPOTIFY_BACKEND == "go-librespot" else "librespot",
     },
 }
+
+# Pont go-librespot (EXPERIMENTAL) : volume jumeau avec l'appli Spotify. None
+# avec librespot, qui ne se pilote pas localement.
+_GO_LIBRESPOT = (
+    golibrespot.GoLibrespotBridge(GO_LIBRESPOT_PORT) if SPOTIFY_BACKEND == "go-librespot" else None
+)
 
 _SYSTEM_VOLUME_BACKEND = None
 
@@ -327,6 +335,10 @@ _SPOTIFY_METADATA_CACHE = {"mtime": None, "data": None}
 
 
 def _get_spotify_metadata_snapshot():
+    if _GO_LIBRESPOT is not None:
+        # go-librespot : metadonnees tenues en memoire par le pont (websocket).
+        return _GO_LIBRESPOT.metadata_snapshot()
+
     empty = {"title": None, "artist": None, "album": None, "updated_at": None}
 
     try:
@@ -740,7 +752,20 @@ def _read_system_volume():
     return None, None, "Aucun backend volume système disponible"
 
 
-def _set_system_volume(volume=None, mute=None):
+def _set_system_volume(volume=None, mute=None, propagate=True):
+    """Regle le mixeur systeme.
+
+    propagate : avec go-librespot, recopie le nouveau volume dans l'appli
+    Spotify. Le pont passe False quand le changement vient justement de Spotify.
+    """
+    ok, error = _set_system_volume_raw(volume=volume, mute=mute)
+    # Un mute ne touche pas au curseur Spotify : il garde la valeur a restaurer.
+    if ok and propagate and _GO_LIBRESPOT is not None and volume is not None and not mute:
+        _GO_LIBRESPOT.push_volume(volume)
+    return ok, error
+
+
+def _set_system_volume_raw(volume=None, mute=None):
     backend = _get_system_volume_backend()
     if not backend:
         return False, "Aucun backend volume système disponible"
@@ -1712,6 +1737,31 @@ def api_hotspot():
 
 
 _start_shairport_metadata_monitor()
+
+
+def _apply_spotify_volume(percent):
+    """Volume venu de l'appli Spotify (pont go-librespot) -> mixeur systeme."""
+    ok, error = _set_system_volume(
+        volume=percent, mute=False if percent > 0 else None, propagate=False
+    )
+    if not ok:
+        app.logger.warning("go-librespot : volume Spotify non applique (%s)", error)
+        return
+    _sync_system_volume_state(force=True)
+    _touch_state()
+
+
+def _read_local_volume():
+    _sync_system_volume_state(force=True)
+    return SPEAKER_STATE.get("volume")
+
+
+if _GO_LIBRESPOT is not None:
+    _GO_LIBRESPOT.start(
+        apply_local_volume=_apply_spotify_volume,
+        read_local_volume=_read_local_volume,
+        on_change=_touch_state,
+    )
 
 
 def _prewarm_state_cache():

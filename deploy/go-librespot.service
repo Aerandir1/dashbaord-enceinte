@@ -1,0 +1,49 @@
+[Unit]
+# EXPERIMENTAL -- alternative a librespot, choisie a l'installation
+# (sudo ./deploy/install.sh --spotify=go-librespot).
+#
+# Installee sous le nom librespot.service, VOLONTAIREMENT : le dashboard, les
+# droits sudo, le Conflicts= de shairport-sync et le helper de renommage
+# visent tous ce nom. Changer d'implementation ne touche donc qu'a ce fichier.
+Description=go-librespot (Spotify Connect, experimental) pour l'enceinte
+Documentation=https://github.com/devgianlu/go-librespot
+After=network-online.target sound.target avahi-daemon.service
+Wants=network-online.target
+
+# Une seule source audio a la fois (voir librespot.service).
+Conflicts=shairport-sync.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=@RUN_USER@
+SupplementaryGroups=audio
+
+Environment=SPOTIFY_NAME=Enceinte
+Environment=SPOTIFY_BITRATE=320
+Environment=ALSA_DEVICE=default
+Environment=GO_LIBRESPOT_PORT=3678
+EnvironmentFile=/etc/default/enceinte
+
+# config.yml (genere par install.sh) et state.json (identifiants Spotify).
+# /var/lib/go-librespot appartient a User= : les identifiants y survivent.
+StateDirectory=go-librespot
+StateDirectoryMode=0750
+
+# Les reglages qui vivent dans /etc/default/enceinte passent en surcharges -c :
+# un renommage depuis le dashboard (SPOTIFY_NAME + try-restart) suffit, sans
+# regenerer config.yml.
+# Pas de temps reel, pour la meme raison que librespot (runtime asynchrone).
+ExecStart=/usr/local/bin/go-librespot \
+    --config_dir /var/lib/go-librespot \
+    -c "device_name=${SPOTIFY_NAME}" \
+    -c "bitrate=${SPOTIFY_BITRATE}" \
+    -c "audio_device=${ALSA_DEVICE}" \
+    -c "server.port=${GO_LIBRESPOT_PORT}"
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

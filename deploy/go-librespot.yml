@@ -1,0 +1,40 @@
+# Configuration go-librespot (EXPERIMENTAL). Installee vers
+# /var/lib/go-librespot/config.yml et REECRITE a chaque install.sh : les
+# reglages personnels vont dans /etc/default/enceinte (nom, debit, sortie),
+# passes en surcharges -c par l'unite systemd.
+# Schema complet : https://github.com/devgianlu/go-librespot/blob/master/config_schema.json
+
+log_level: info
+# journald horodate deja chaque ligne.
+log_disable_timestamp: true
+
+device_type: speaker
+audio_backend: alsa
+# Remplace par ALSA_DEVICE (-c audio_device=...) ; "default" = le dmix de
+# /etc/asound.conf, qui ecrit dans la boucle lue par CamillaDSP.
+audio_device: default
+
+# ── Volume jumeau ────────────────────────────────────────────────────────
+# external_volume : go-librespot N'APPLIQUE PAS le volume au son, il tient
+# seulement la valeur affichee dans l'appli Spotify. Le seul etage de volume
+# reste le mixeur du dashboard, qui suit cette valeur par l'API ci-dessous et
+# la met a jour quand on tourne le potar (app/golibrespot.py).
+# Sans mixer_device : go-librespot ne touche pas lui-meme a ALSA.
+external_volume: true
+volume_steps: 100
+
+# Spotify Connect : decouverte mDNS via avahi (deja installe pour AirPlay et
+# Onde), identifiants conserves apres deconnexion de l'appli.
+zeroconf_enabled: true
+zeroconf_backend: avahi
+credentials:
+  type: zeroconf
+  zeroconf:
+    persist_credentials: true
+
+# API locale du pont : boucle locale uniquement, jamais exposee au reseau.
+# Le port est surcharge par GO_LIBRESPOT_PORT (-c server.port=...).
+server:
+  enabled: true
+  address: 127.0.0.1
+  port: 3678

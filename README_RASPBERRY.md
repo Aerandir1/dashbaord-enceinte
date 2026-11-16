@@ -142,3 +142,20 @@ LIBRESPOT_USE_SUDO=false
 ```
 
 Le bouton `Activer/Couper Spotify` du dashboard démarre ou arrête alors le service user `librespot` sans demander de mot de passe.
+
+## 10) go-librespot : volume synchronisé avec l'appli Spotify (expérimental)
+
+Avec librespot, le volume de l'appli Spotify et le potar du dashboard sont deux étages indépendants qui se multiplient. L'installeur peut installer [go-librespot](https://github.com/devgianlu/go-librespot) à la place, pour que les deux potars se comportent comme des jumeaux : tourner l'un fait bouger l'autre.
+
+```bash
+sudo ./deploy/install.sh --spotify=go-librespot   # ou sans option : le script pose la question
+sudo ./deploy/install.sh --spotify=librespot      # revenir à librespot
+```
+
+Fonctionnement :
+
+- go-librespot tourne en `external_volume` : il n'applique aucun volume au son. Le seul étage reste le mixeur du dashboard, avec sa courbe perceptive.
+- Le dashboard écoute le websocket local de go-librespot (`127.0.0.1:3678/events`). Un changement dans l'appli Spotify règle le mixeur, et le potar suit en direct (SSE). Tourner le potar, ou régler le volume par Onde, renvoie la valeur à Spotify (`POST /player/volume`).
+- L'unité systemd garde le nom `librespot.service` : sudoers, exclusivité avec AirPlay et renommage n'ont pas changé.
+- Fichiers : binaire `/usr/local/bin/go-librespot` (version figée par `GO_LIBRESPOT_VERSION` dans `install.sh`), config `/var/lib/go-librespot/config.yml` (régénérée à chaque installation), identifiants `/var/lib/go-librespot/state.json`.
+- Logs : `journalctl -fu librespot` (go-librespot) et `journalctl -fu dashboard-enceinte` (pont).
