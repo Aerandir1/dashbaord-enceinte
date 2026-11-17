@@ -223,25 +223,49 @@ nodes:
     section: sources
     category: feature
     goal: Synchroniser dans les deux sens le potar du dashboard et le volume Spotify Connect, en proposant go-librespot comme alternative expérimentale à librespot au moment de l'installation.
-    description: "Commit 272197c (16/11). Code livré et documenté, mais rien n'a encore tourné sur le Pi. Version figée v0.10.5."
+    description: "Commit 272197c (16/11). Version figée v0.10.5. Le 17/11 : plafond de volume configurable (51f30ec, laissé à 100 % par défaut), normalisation désactivée pour retrouver le niveau de librespot (496c589), puis atténuation fixe en ALSA avant le dmix (e12d522). En attente du test sur le Pi pour clore i1."
     implementation:
       - 'install.sh : choix librespot / go-librespot (option, variable ou question)'
       - Unité go-librespot installée sous le nom librespot.service (sudoers, Conflicts, netctl inchangés)
       - "external_volume : go-librespot n'applique pas le volume, le dashboard reste le seul étage"
       - 'app/golibrespot.py : websocket /events -> mixeur système + métadonnées ; potar -> POST /player/volume'
+      - 'VOLUME_MAX_PERCENT : plafond du mixeur (51f30ec), 100 % par défaut, réglage conservé'
+      - 'deploy/go-librespot.yml : normalisation_disabled: true (go-librespot normalisait à −14 LUFS, 5 à 8 dB de moins que librespot)'
+      - "deploy/asound.conf : pcm.golibrespot (plug -> route à gain fixe GO_LIBRESPOT_GAIN_DB, −26 dB par défaut -> dmix), marge que librespot obtenait par son volume logiciel"
     done_when:
       - Tourner le potar du dashboard déplace le curseur de l'appli Spotify
       - Changer le volume dans l'appli Spotify déplace le potar du dashboard
       - L'installation par défaut (librespot) est inchangée
       - Le comportement du volume est vérifié quand le dashboard est arrêté
-
-  # ───────────── DSP et égaliseur ─────────────
     issues:
       - id: i1
         title: Crackment deconection volume quand le volume est depasse 48- 47 %
         status: open
         created: '2026-11-17'
         description: Quand je veux augmeter le volume, le son coupe crack comme ci ça cliper mais ça cut vriament, arrive a 47 % 48 %, peut importe le potar
+        notes: "Correctifs 51f30ec, 496c589 et e12d522 (17/11) : marge fixe −26 dB pour go-librespot. À tester sur le Pi, potars à 100 % ; remonter GO_LIBRESPOT_GAIN_DB par pas de 2 dB si pas de coupure. Si librespot coupe aussi, la limite vient de l'ampli TPA3116 ou de son alimentation."
+
+  - id: go-librespot-commandes-lecture
+    title: 'go-librespot : commandes de lecture depuis le dashboard et Onde'
+    status: done
+    depends_on: [go-librespot-volume-jumeau]
+    phase: phase-4
+    section: sources
+    category: feature
+    goal: Piloter la lecture Spotify (lecture, pause, suivant, précédent) depuis l'enceinte quand go-librespot est le backend, ce que librespot ne permet pas.
+    description: "Commit 8ce4535 (17/11). Testé contre un go-librespot simulé, pas encore sur le Pi."
+    implementation:
+      - "app/golibrespot.py : playback_command() -> POST /player/playpause, /resume, /pause, /next, /prev"
+      - "app/views.py : /api/playback transmet à go-librespot quand le pont est actif (librespot : erreur explicite inchangée)"
+      - "app/onde.py : controls vrais pour Spotify si une piste est chargée et le websocket connecté ; _transport() relaie la commande"
+      - ONDE.md mis à jour (champ controls)
+    done_when:
+      - Les boutons du dashboard pilotent la lecture Spotify avec go-librespot
+      - Les commandes Onde play / pause / toggle / next / previous marchent pour Spotify avec go-librespot
+      - Sans session Spotify ouverte, une erreur claire est renvoyée
+      - Avec librespot, le comportement est inchangé
+
+  # ───────────── DSP et égaliseur ─────────────
   - id: chaine-camilladsp
     title: Chaîne audio CamillaDSP avec garde-fou de validation
     status: done
