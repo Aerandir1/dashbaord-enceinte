@@ -74,7 +74,7 @@ nodes:
     goal: Faire tourner le dashboard et les services audio sur le Pi sans Docker, de façon stable et sans craquements.
     description: "Commits a680967 (installation native sans Docker), 11e16c8 (serveur WSGI waitress + correctif SSE), 1b1a4b8 (ne plus sourcer /etc/default/enceinte dans le shell)."
     implementation:
-      - deploy/install.sh : paquets, utilisateur dédié, unités systemd, sudoers restreint
+      - deploy/install.sh: paquets, utilisateur dédié, unités systemd, sudoers restreint
       - Serveur de production waitress à la place du serveur de développement Flask, avec correctif du flux SSE
       - Configuration par /etc/default/enceinte (deploy/enceinte.env), lue par systemd et non sourcée dans le shell
     done_when:
@@ -124,8 +124,8 @@ nodes:
     goal: Basculer la sortie audio entre le DAC HiFiBerry et la prise jack depuis le dashboard.
     description: "Commits 5478891 (module app/outputs.py) et 3f21ad8 (dtparam=audio=on doit précéder les overlays dans config.txt). Le modèle Onde est déduit de la sortie active (37ada2a)."
     implementation:
-      - app/outputs.py : détection des cartes, sortie active, bascule
-      - install.sh : écriture de config.txt dans le bon ordre
+      - app/outputs.py: détection des cartes, sortie active, bascule
+      - install.sh: écriture de config.txt dans le bon ordre
       - Sélecteur de sortie dans le dashboard
     done_when:
       - Changer de sortie dans l'interface déplace le son sur la nouvelle carte
@@ -182,7 +182,7 @@ nodes:
     goal: Diffuser AirPlay et piloter lecture, pause et piste suivante depuis le tableau de bord.
     description: "Commits bf62e92, f4255fb, befe5c4 et 4c132d8 (« MetaData fixed » v1 et v2). Interface MPRIS de shairport-sync interrogée avec busctl --json, sans dépendance D-Bus Python (app/airplay.py)."
     implementation:
-      - app/airplay.py : métadonnées titre/artiste/album et pochette (mpris:artUrl)
+      - app/airplay.py: métadonnées titre/artiste/album et pochette (mpris:artUrl)
       - Contrôle Play, Pause, PlayPause, Next, Previous
       - Pochette servie par /api/airplay/cover
     done_when:
@@ -236,6 +236,12 @@ nodes:
       - Le comportement du volume est vérifié quand le dashboard est arrêté
 
   # ───────────── DSP et égaliseur ─────────────
+    issues:
+      - id: i1
+        title: Crackment deconection volume quand le volume est depasse 48- 47 %
+        status: open
+        created: '2026-11-17'
+        description: Quand je veux augmeter le volume, le son coupe crack comme ci ça cliper mais ça cut vriament, arrive a 47 % 48 %, peut importe le potar
   - id: chaine-camilladsp
     title: Chaîne audio CamillaDSP avec garde-fou de validation
     status: done
