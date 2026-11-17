@@ -12,169 +12,218 @@ phases:
     title: Intégration Domus et nouvelles sources
   - id: phase-5
     title: Fiabilité et documentation
+sections:
+  - id: socle
+    title: Socle Flask et déploiement
+  - id: audio
+    title: Chaîne audio et volume
+  - id: sources
+    title: Sources (Spotify, AirPlay, Music Assistant)
+  - id: dsp-eq
+    title: DSP et égaliseur
+  - id: ui
+    title: Interface (dashboard Pip-Boy)
+  - id: reseau
+    title: Réglages et réseau
+  - id: onde
+    title: Protocole Onde et Domus
+  - id: qualite
+    title: Fiabilité, tests et documentation
+  - id: materiel
+    title: Matériel (PCB, DAC, ampli)
 nodes:
+  # ───────────── Socle Flask et déploiement ─────────────
   - id: dashboard-flask
     title: Tableau de bord Flask (lecture, volume, sourdine)
     status: done
     depends_on: []
     phase: phase-1
+    section: socle
     category: backend
     goal: Piloter l'enceinte depuis un navigateur du réseau local.
+    description: "Historique : commit initial 08bd00a (15/03/2026), contrôle AirPlay via shairport-sync (bf62e92), Spotify via un service utilisateur librespot sans sudo (65907b5), métadonnées AirPlay améliorées (f4255fb)."
+    implementation:
+      - "Application Flask (app/__init__.py, app/views.py, app/config.py) lancée par run.py"
+      - "Routes /api/state, lecture/pause/suivant/précédent, volume et mute, flux SSE pour l'état"
+      - "Services Spotify et AirPlay pilotés par l'utilisateur du dashboard, sans sudo"
+    done_when:
+      - Le dashboard pilote lecture, volume et sourdine depuis un navigateur du réseau local
+
+  - id: integration-docker
+    title: Intégration Docker (conteneur et supervisord)
+    status: done
+    depends_on: [dashboard-flask]
+    phase: phase-1
+    section: socle
+    category: infra
+    goal: "Premier mode de déploiement : tout dans un conteneur, avec les services audio supervisés."
+    description: "Commits 6905610 et 0816b7f (27/08) « meilleure intégration docker », puis abandon au profit de l'installation native (a680967). Dockerfile, docker-compose.yml, docker/entrypoint.sh et README_DOCKER.md restent dans le dépôt, désormais secondaires."
+    implementation:
+      - Dockerfile, docker-compose.yml et docker/entrypoint.sh
+      - supervisord pour lancer le dashboard, shairport-sync et librespot
+    done_when:
+      - Le conteneur démarre le dashboard et les services audio
 
   - id: deploiement-natif-systemd
     title: Installation native systemd et serveur waitress
     status: done
     depends_on: [dashboard-flask]
     phase: phase-1
+    section: socle
     category: infra
     goal: Faire tourner le dashboard et les services audio sur le Pi sans Docker, de façon stable et sans craquements.
+    description: "Commits a680967 (installation native sans Docker), 11e16c8 (serveur WSGI waitress + correctif SSE), 1b1a4b8 (ne plus sourcer /etc/default/enceinte dans le shell)."
+    implementation:
+      - deploy/install.sh : paquets, utilisateur dédié, unités systemd, sudoers restreint
+      - Serveur de production waitress à la place du serveur de développement Flask, avec correctif du flux SSE
+      - Configuration par /etc/default/enceinte (deploy/enceinte.env), lue par systemd et non sourcée dans le shell
+    done_when:
+      - sudo ./deploy/install.sh installe tout sur un Raspberry Pi vierge
+      - Le dashboard démarre au boot et survit à un redémarrage
 
+  - id: fix-craquements-audio
+    title: Fin des craquements audio (contention CPU, tampon ALSA)
+    status: done
+    depends_on: [deploiement-natif-systemd]
+    phase: phase-1
+    section: socle
+    category: infra
+    goal: Supprimer les craquements AirPlay et Spotify observés sur le Raspberry Pi 3.
+    description: "Commits c705bfb (perf), 6506e63, 4fec59c. Diagnostic mesuré : /api/state prenait 2,6 s à cause de supervisorctl relancé à chaque requête, et le thread audio de shairport-sync était préempté."
+    implementation:
+      - Un seul « supervisorctl status » groupé au lieu d'un appel par service
+      - Cache TTL de 3 s sur l'état système, forcé après chaque action utilisateur
+      - nice -n 10 sur le dashboard pour qu'il cède le CPU à l'audio
+      - Tampon ALSA explicite pour shairport-sync
+      - Retrait de l'ordonnancement temps réel de librespot (SCHED_FIFO écarté)
+    done_when:
+      - Plus de craquements en lecture AirPlay et Spotify simultanément au dashboard ouvert
+
+  # ───────────── Chaîne audio et volume ─────────────
   - id: carte-partagee-dmix
     title: Carte son partagée (dmix) et sortie HiFiBerry ou jack
     status: done
     depends_on: [deploiement-natif-systemd]
     phase: phase-1
+    section: audio
     category: infra
     goal: Permettre à plusieurs services audio de coexister et choisir la sortie physique.
+    description: "Commit 04e346d (27/08) : carte partageable via dmix, AirPlay et Spotify coexistent."
+    implementation:
+      - deploy/asound.conf avec dmix sur la carte physique
+    done_when:
+      - AirPlay et Spotify peuvent ouvrir la carte sans conflit « device busy »
 
+  - id: choix-sortie-audio
+    title: Choix de la sortie physique (HiFiBerry ou jack)
+    status: done
+    depends_on: [carte-partagee-dmix]
+    phase: phase-1
+    section: audio
+    category: backend
+    goal: Basculer la sortie audio entre le DAC HiFiBerry et la prise jack depuis le dashboard.
+    description: "Commits 5478891 (module app/outputs.py) et 3f21ad8 (dtparam=audio=on doit précéder les overlays dans config.txt). Le modèle Onde est déduit de la sortie active (37ada2a)."
+    implementation:
+      - app/outputs.py : détection des cartes, sortie active, bascule
+      - install.sh : écriture de config.txt dans le bon ordre
+      - Sélecteur de sortie dans le dashboard
+    done_when:
+      - Changer de sortie dans l'interface déplace le son sur la nouvelle carte
+
+  - id: potar-de-son-lineaire
+    title: Potar de son linéaire
+    status: done
+    depends_on: [carte-partagee-dmix]
+    category: backend
+    section: audio
+    scope: Potar volume, pas front end
+    goal: "Aujourd'hui le volume dans sur la plage 0% : 50% est inaudible, je pense que le potar de volume est exponentiel"
+    description: "Commit e2ceffe (08/11) : courbe perceptive via amixer -M."
+    implementation:
+      - Modifier la fonction, linéariser la fonction, je sais pas trop ce qui est possible de faire mais toute les enceinte actuel on un volume linaire en focntion du potar donc c'est possible
+    phase: phase-1
+
+  - id: volume-commun-pcm5102a
+    title: Étage de volume commun pour le DAC PCM5102A
+    status: todo
+    depends_on: [potar-de-son-lineaire]
+    phase: phase-4
+    section: audio
+    category: backend
+    goal: "Le PCM5102A n'a aucun contrôle de volume matériel : prévoir un étage logiciel unique (CamillaDSP ou mixeur softvol) pour que dashboard, Spotify, AirPlay et Onde agissent sur le même volume."
+    done_when:
+      - Le volume fonctionne sur le DAC PCM5102A sans mixeur matériel
+      - Une seule courbe perceptive s'applique, sans double atténuation
+      - Le volume est identique pour toutes les sources
+
+  # ───────────── Sources ─────────────
   - id: source-spotify
     title: Spotify Connect avec métadonnées réelles (librespot --onevent)
     status: done
     depends_on: [carte-partagee-dmix]
     phase: phase-2
+    section: sources
     category: integration
     goal: Diffuser Spotify et afficher titre, artiste et pochette dans le tableau de bord.
+    description: "Commit e913a38 (27/08) : métadonnées réelles via le hook --onevent de librespot (deploy/librespot-event.sh). Service deploy/librespot.service."
+    implementation:
+      - Hook --onevent de librespot écrivant l'état de lecture lu par le dashboard
+      - Nom Spotify issu de SPOTIFY_NAME
+    done_when:
+      - Titre, artiste et pochette Spotify s'affichent dans le dashboard
 
   - id: source-airplay
     title: AirPlay avec métadonnées et contrôle via MPRIS
     status: done
     depends_on: [carte-partagee-dmix]
     phase: phase-2
+    section: sources
     category: integration
     goal: Diffuser AirPlay et piloter lecture, pause et piste suivante depuis le tableau de bord.
+    description: "Commits bf62e92, f4255fb, befe5c4 et 4c132d8 (« MetaData fixed » v1 et v2). Interface MPRIS de shairport-sync interrogée avec busctl --json, sans dépendance D-Bus Python (app/airplay.py)."
+    implementation:
+      - app/airplay.py : métadonnées titre/artiste/album et pochette (mpris:artUrl)
+      - Contrôle Play, Pause, PlayPause, Next, Previous
+      - Pochette servie par /api/airplay/cover
+    done_when:
+      - Métadonnées, pochette et boutons de contrôle AirPlay fonctionnent depuis le dashboard
 
   - id: selecteur-source-unique
     title: Une seule source active à la fois, avec sélecteur dédié
     status: done
     depends_on: [source-spotify, source-airplay]
     phase: phase-2
+    section: sources
     category: backend
     goal: Éviter que les deux services audio se disputent la carte son en boucle.
-
-  - id: chaine-camilladsp
-    title: Chaîne audio CamillaDSP avec garde-fou de validation
-    status: done
-    depends_on: [carte-partagee-dmix]
-    phase: phase-2
-    category: backend
-    goal: Faire passer tout le son par un DSP pour y appliquer un traitement.
-
-  - id: eq-parametrique
-    title: Égaliseur paramétrique avec éditeur de courbe et potards
-    status: done
-    depends_on: [chaine-camilladsp]
-    phase: phase-2
-    category: ui
-    goal: Régler finement le rendu sonore de l'enceinte depuis l'interface.
-
-  - id: reglages-nom-wifi
-    title: Renommer l'enceinte et changer de réseau Wi-Fi
-    status: done
-    depends_on: [deploiement-natif-systemd]
-    phase: phase-3
-    category: backend
-    goal: Configurer l'enceinte sans SSH, avec un nom répercuté sur Spotify, AirPlay et mDNS.
-
-  - id: portail-captif
-    title: Point d'accès et portail de configuration au premier démarrage
-    status: done
-    depends_on: [reglages-nom-wifi]
-    phase: phase-3
-    category: infra
-    goal: Mettre une enceinte neuve en réseau sans clavier ni écran (optionnel, ENABLE_SETUP_HOTSPOT).
-
-  - id: ui-pipboy
-    title: Interface façon Pip-Boy, plein écran et pictogrammes SVG
-    status: done
-    depends_on: [dashboard-flask]
-    phase: phase-3
-    category: ui
-    goal: Donner au tableau de bord une identité visuelle soignée, sur mobile comme sur ordinateur.
-
-  - id: protocole-onde-v1
-    title: Protocole Onde v1 (hello, state, command, events, cover, mDNS)
-    status: done
-    depends_on: [selecteur-source-unique, source-spotify, source-airplay]
-    phase: phase-4
-    category: api
-    goal: Faire découvrir et piloter l'enceinte par Domus avec un protocole stable et documenté.
+    description: "Commits 73b6ad7 (sélecteur dédié) et 5bf12ef (stoppe le ping-pong entre les deux services via Conflicts= dans librespot.service et shairport-sync-override.conf)."
+    done_when:
+      - Choisir une source arrête les autres, sans redémarrage en boucle
 
   - id: source-music-assistant
     title: Music Assistant / Squeezelite comme vraie source
     status: todo
     depends_on: [selecteur-source-unique]
     phase: phase-4
+    section: sources
     category: integration
     goal: Ajouter une quatrième source alimentée par la bibliothèque musicale locale, aujourd'hui seulement annoncée « Bientôt ».
+    description: "Annoncée « 4e source, à venir » dans l'interface depuis 613587a."
     done_when:
       - Squeezelite est installé par deploy/install.sh et sort le son par la chaîne CamillaDSP
       - Choisir Music Assistant dans le sélecteur arrête Spotify et AirPlay, et inversement
       - Le tableau de bord et /onde/v1/state affichent titre, artiste et pochette de la piste Music Assistant
       - La mention « Bientôt » a disparu du sélecteur
 
-  - id: onde-sync-multiroom
-    title: Lecture synchronisée multiroom (fonction Onde « sync », Snapcast)
-    status: todo
-    depends_on: [protocole-onde-v1]
-    phase: phase-4
-    category: integration
-    goal: Jouer le même son en synchro sur plusieurs enceintes pilotées par Domus.
-    done_when:
-      - La fonction sync est spécifiée dans ONDE.md (et dans docs/onde.md côté Domus)
-      - Un client Snapcast installé sur l'enceinte peut être activé comme source depuis Onde
-      - Deux enceintes jouent le même flux sans décalage audible
-
-  - id: tests-backend
-    title: Tests automatisés du backend (Onde, EQ, sources)
-    status: todo
-    depends_on: [protocole-onde-v1, eq-parametrique]
-    phase: phase-5
-    category: tests
-    goal: Repérer les régressions avant de déployer sur le Pi, en simulant les dépendances système.
-    done_when:
-      - Une suite pytest tourne sur un poste sans matériel, en simulant ALSA, systemd, busctl et CamillaDSP
-      - Les routes /onde/v1 sont couvertes (état, chaque commande, erreurs typées, clé d'accès)
-      - La génération et la validation de la config CamillaDSP sont testées
-      - La suite passe en CI à chaque push
-
-  - id: doc-a-jour
-    title: README et documentation d'installation à jour
-    status: todo
-    depends_on: [deploiement-natif-systemd]
-    phase: phase-5
-    category: docs
-    goal: Faire décrire au README le projet réel au lieu de la simulation d'origine.
-    done_when:
-      - Le README ne parle plus de simulation, de spectre FFT ni d'EQ 5 bandes
-      - L'installation native (deploy/install.sh, /etc/default/enceinte et ses variables) est documentée
-      - README_DOCKER.md est mis à jour ou marqué obsolète
-      - FONCTIONNALITES-A-VENIR.txt est fusionné dans la documentation ou remplacé par la roadmap
-  - id: potar-de-son-lineaire
-    title: Potar de son linéaire
-    status: done
-    depends_on: [carte-partagee-dmix]
-    category: backend
-    scope: Potar volume, pas front end
-    goal: "Aujourd'hui le volume dans sur la plage 0% : 50% est inaudible, je pense que le potar de volume est exponentiel"
-    implementation:
-      - Modifier la fonction, linéariser la fonction, je sais pas trop ce qui est possible de faire mais toute les enceinte actuel on un volume linaire en focntion du potar donc c'est possible
-    phase: phase-1
   - id: go-librespot-volume-jumeau
     title: 'go-librespot expérimental : volume jumeau dashboard ↔ Spotify Connect'
     status: in_progress
-    depends_on: []
+    depends_on: [source-spotify, potar-de-son-lineaire]
+    phase: phase-4
+    section: sources
     category: feature
     goal: Synchroniser dans les deux sens le potar du dashboard et le volume Spotify Connect, en proposant go-librespot comme alternative expérimentale à librespot au moment de l'installation.
+    description: "Commit 272197c (16/11). Code livré et documenté, mais rien n'a encore tourné sur le Pi. Version figée v0.10.5."
     implementation:
       - 'install.sh : choix librespot / go-librespot (option, variable ou question)'
       - Unité go-librespot installée sous le nom librespot.service (sudoers, Conflicts, netctl inchangés)
@@ -184,3 +233,221 @@ nodes:
       - Tourner le potar du dashboard déplace le curseur de l'appli Spotify
       - Changer le volume dans l'appli Spotify déplace le potar du dashboard
       - L'installation par défaut (librespot) est inchangée
+      - Le comportement du volume est vérifié quand le dashboard est arrêté
+
+  # ───────────── DSP et égaliseur ─────────────
+  - id: chaine-camilladsp
+    title: Chaîne audio CamillaDSP avec garde-fou de validation
+    status: done
+    depends_on: [carte-partagee-dmix]
+    phase: phase-2
+    section: dsp-eq
+    category: backend
+    goal: Faire passer tout le son par un DSP pour y appliquer un traitement.
+    description: "Commits 8a9b7de (étape 1 : boucle ALSA aloop + camilladsp.service), 4115ce3 (config valide + garde-fou de validation) et 78383cb (réparation de l'EQ, asound.conf)."
+    implementation:
+      - deploy/aloop.conf, deploy/camilladsp.yml, deploy/camilladsp.service
+      - Les sources jouent dans la boucle ALSA, CamillaDSP lit la boucle et joue sur la carte
+      - Validation de la config avant redémarrage du service, pour ne jamais couper le son
+    done_when:
+      - Tout le son passe par CamillaDSP
+      - Une config invalide est refusée sans interrompre la lecture
+
+  - id: eq-parametrique
+    title: Égaliseur paramétrique avec éditeur de courbe et potards
+    status: done
+    depends_on: [chaine-camilladsp]
+    phase: phase-2
+    section: dsp-eq
+    category: ui
+    goal: Régler finement le rendu sonore de l'enceinte depuis l'interface.
+    description: "Commits e4a699f (étape 2 : égaliseur réellement actif, app/eq.py), c416ff3 (étape 3 : éditeur de courbe static/js/eq-editor.js), 1ef03d0 (potards rotatifs façon plugin), ac88ba5 (panneau de bande flottant au-dessus du point sélectionné)."
+    implementation:
+      - app/eq.py génère la config CamillaDSP à partir des bandes
+      - Éditeur de courbe interactif (glisser les points)
+      - Potards rotatifs fréquence/gain/Q et panneau flottant par bande
+    done_when:
+      - Modifier une bande change le son en direct
+
+  # ───────────── Interface ─────────────
+  - id: ui-pipboy
+    title: Interface façon Pip-Boy, plein écran et pictogrammes SVG
+    status: done
+    depends_on: [dashboard-flask]
+    phase: phase-3
+    section: ui
+    category: ui
+    goal: Donner au tableau de bord une identité visuelle soignée, sur mobile comme sur ordinateur.
+    description: "Commits 6a61f3b (refonte Fallout, polices VT323 et Share Tech Mono auto-hébergées), 8ed4e8e (plein écran ordinateur + page /reglages, thèmes vert/ambre/auto), d7964cb (pictogrammes SVG à la place des emoji). Précédé par « New Dashboard » (fb19721) et la jauge de loudness (5007d2b)."
+    implementation:
+      - Phosphore vert/ambre, rivets, lignes de balayage
+      - Page Réglages séparée, mise en page 3 colonnes sur ordinateur
+      - Polices auto-hébergées pour fonctionner hors ligne sur le point d'accès
+    done_when:
+      - Aucun débordement sur 5 résolutions, mobile et tablette
+
+  - id: potard-volume-hifi
+    title: Potard de volume façon ampli hi-fi
+    status: done
+    depends_on: [ui-pipboy]
+    phase: phase-3
+    section: ui
+    category: ui
+    goal: Un potard rotatif tactile et souris, sans zoom ni sélection de texte parasite.
+    description: "Commit 9a0f091 (16/10)."
+    done_when:
+      - Le potard se manipule au doigt et à la souris sans zoom de page
+
+  - id: box-etat-reelle
+    title: Box « État » basée sur des mesures réelles
+    status: done
+    depends_on: [ui-pipboy]
+    phase: phase-3
+    section: ui
+    category: ui
+    goal: Afficher uniquement des données vraies (Wi-Fi dBm, carte son, format joué, température CPU) à la place de valeurs inventées (batterie, firmware).
+    description: "Commits 92cfcfd et b1d6f10 (retrait du panneau de spectre FFT)."
+    done_when:
+      - Les 4 valeurs de la box sont mesurées sur la machine
+
+  - id: pwa-splash-nginx
+    title: Page d'attente, service worker et reverse proxy nginx
+    status: done
+    depends_on: [deploiement-natif-systemd, ui-pipboy]
+    phase: phase-3
+    section: ui
+    category: infra
+    goal: Une interface qui charge vite, ouvre sur le port 80 et reste lisible pendant un redémarrage.
+    description: "Commits 84678f0 (« Charment bien » : deploy/nginx-enceinte.conf, deploy/splash.html, static/js/sw.js, ENABLE_NGINX) et 1c1a82a (versionnage des fichiers statiques pour invalider le cache après une mise à jour)."
+    done_when:
+      - Après une mise à jour, le navigateur recharge les nouveaux fichiers statiques
+      - Une page d'attente s'affiche quand le dashboard redémarre
+
+  - id: ui-correctifs-theme
+    title: Correctifs d'interface (thème ambre, libellé, oscilloscope)
+    status: todo
+    depends_on: [ui-pipboy]
+    phase: phase-5
+    section: ui
+    category: ui
+    goal: Régler les défauts relevés lors de la refonte Fallout du 8/11.
+    done_when:
+      - La bande 1 de l'égaliseur suit le thème ambre
+      - Le libellé « Dernière mise à jour » n'est plus coupé sur ordinateur
+      - L'animation oscilloscope est vérifiée en vraie lecture Spotify et AirPlay
+
+  # ───────────── Réglages et réseau ─────────────
+  - id: reglages-nom-wifi
+    title: Renommer l'enceinte et changer de réseau Wi-Fi
+    status: done
+    depends_on: [deploiement-natif-systemd]
+    phase: phase-3
+    section: reseau
+    category: backend
+    goal: Configurer l'enceinte sans SSH, avec un nom répercuté sur Spotify, AirPlay et mDNS.
+    description: "Commit f64c143 (31/08). Module app/netctl.py, helper root deploy/enceinte-netctl, règles dans deploy/dashboard-sudoers, panneau static/js/settings.js."
+    implementation:
+      - POST /api/name puis hostname, avahi, SPOTIFY_NAME et nom AirPlay, redémarrage des services
+      - /api/wifi/scan, /status, /connect via nmcli
+    done_when:
+      - Renommer l'enceinte change son nom partout
+      - Changer de Wi-Fi depuis l'interface fonctionne
+
+  - id: portail-captif
+    title: Point d'accès et portail de configuration au premier démarrage
+    status: done
+    depends_on: [reglages-nom-wifi]
+    phase: phase-3
+    section: reseau
+    category: infra
+    goal: Mettre une enceinte neuve en réseau sans clavier ni écran (optionnel, ENABLE_SETUP_HOTSPOT).
+    description: "Point d'accès « Enceinte-Setup », page /setup, redirection DNS dnsmasq. Portail automatique complet avec ENABLE_NGINX=true (port 80)."
+    done_when:
+      - Sans Wi-Fi connu, le point d'accès s'ouvre et la page /setup s'affiche toute seule
+
+  # ───────────── Protocole Onde et Domus ─────────────
+  - id: protocole-onde-v1
+    title: Protocole Onde v1 (hello, state, command, events, cover, mDNS)
+    status: done
+    depends_on: [selecteur-source-unique, source-spotify, source-airplay]
+    phase: phase-4
+    section: onde
+    category: api
+    goal: Faire découvrir et piloter l'enceinte par Domus avec un protocole stable et documenté.
+    description: "Commits bd72de1 (app/onde.py, ONDE.md, deploy/onde.service) et 37ada2a (le modèle annoncé suit la sortie audio active)."
+    done_when:
+      - Domus découvre l'enceinte par mDNS et la pilote via /onde/v1
+
+  - id: onde-verif-implementation
+    title: Vérifier app/onde.py contre la spécification ONDE.md
+    status: todo
+    depends_on: [protocole-onde-v1]
+    phase: phase-5
+    section: onde
+    category: api
+    goal: Seule la spécification a été relue le 15/11 ; confirmer que le code l'applique (routes, erreurs typées, clé d'accès, événements, pochette).
+    done_when:
+      - Chaque route et chaque erreur de ONDE.md est retrouvée dans app/onde.py
+      - Les écarts sont corrigés d'un côté ou de l'autre
+
+  - id: onde-sync-multiroom
+    title: Lecture synchronisée multiroom (fonction Onde « sync », Snapcast)
+    status: todo
+    depends_on: [protocole-onde-v1]
+    phase: phase-4
+    section: onde
+    category: integration
+    goal: Jouer le même son en synchro sur plusieurs enceintes pilotées par Domus.
+    description: "Piste étudiée le 15/11 : Pi maître avec snapserver, clients ESP32 (avec PSRAM) ou Pi, décalage réglé par client, librespot en sortie pipe."
+    implementation:
+      - Spécifier la fonction sync (ONDE.md § 9)
+      - librespot en sortie pipe vers snapserver, snapclient local passant par CamillaDSP
+      - Décider si AirPlay alimente aussi Snapcast (shairport-sync en pipe)
+    done_when:
+      - La fonction sync est spécifiée dans ONDE.md (et dans docs/onde.md côté Domus)
+      - Un client Snapcast installé sur l'enceinte peut être activé comme source depuis Onde
+      - Deux enceintes jouent le même flux sans décalage audible
+
+  # ───────────── Fiabilité, tests et documentation ─────────────
+  - id: tests-backend
+    title: Tests automatisés du backend (Onde, EQ, sources)
+    status: todo
+    depends_on: [protocole-onde-v1, eq-parametrique]
+    phase: phase-5
+    section: qualite
+    category: tests
+    goal: Repérer les régressions avant de déployer sur le Pi, en simulant les dépendances système.
+    done_when:
+      - Une suite pytest tourne sur un poste sans matériel, en simulant ALSA, systemd, busctl et CamillaDSP
+      - Les routes /onde/v1 sont couvertes (état, chaque commande, erreurs typées, clé d'accès)
+      - La génération et la validation de la config CamillaDSP sont testées
+      - La logique de pont app/golibrespot.py est testée avec un go-librespot simulé
+      - La suite passe en CI à chaque push
+
+  - id: doc-a-jour
+    title: README et documentation d'installation à jour
+    status: todo
+    depends_on: [deploiement-natif-systemd]
+    phase: phase-5
+    section: qualite
+    category: docs
+    goal: Faire décrire au README le projet réel au lieu de la simulation d'origine.
+    done_when:
+      - Le README ne parle plus de simulation, de spectre FFT ni d'EQ 5 bandes
+      - L'installation native (deploy/install.sh, /etc/default/enceinte et ses variables) est documentée
+      - README_DOCKER.md est mis à jour ou marqué obsolète
+      - FONCTIONNALITES-A-VENIR.txt est fusionné dans la documentation ou remplacé par la roadmap
+
+  # ───────────── Matériel ─────────────
+  - id: pcb-enceinte
+    title: PCB de l'enceinte (DAC PCM5102A et ampli TPA3116 enfichés)
+    status: todo
+    depends_on: []
+    phase: phase-5
+    section: materiel
+    category: hardware
+    goal: Remplacer le HiFiBerry par un DAC PCM5102A intégré au PCB, avec des modules enfichés, pour simplifier et réduire le coût.
+    description: "D'après les décisions du 8/11 : PCB 100 % traversant (aucun CMS à souder), symboles officiels KiCad sauf le TPA3116D2 (maison), Freerouting avec classes de pistes (1,2 mm puissance, 0,45 mm amplis, 0,3 mm défaut). Statut d'avancement à confirmer."
+    done_when:
+      - Le PCB est routé sans erreur de règles (DRC)
+      - Le logiciel gère la sortie PCM5102A (voir volume-commun-pcm5102a)
