@@ -144,6 +144,34 @@ class GoLibrespotBridge:
             # go-librespot arrete (source AirPlay active) : rien a synchroniser.
             log.debug("go-librespot : volume non transmis (%s)", exc)
 
+    # ── Commandes de lecture ─────────────────────────────────────────────
+    _PLAYBACK_PATHS = {
+        "play": "/player/resume",
+        "pause": "/player/pause",
+        "toggle": "/player/playpause",
+        "next": "/player/next",
+        "previous": "/player/prev",
+    }
+
+    def playback_command(self, action):
+        """Transmet play / pause / toggle / next / previous a go-librespot.
+
+        Retourne (ok, message_erreur). go-librespot repond une erreur si
+        aucune session Spotify n'est ouverte (personne n'a choisi l'enceinte
+        dans l'appli) : rien a reprendre dans ce cas."""
+        path = self._PLAYBACK_PATHS.get(action)
+        if path is None:
+            return False, f"Commande inconnue : {action}"
+        try:
+            self._request("POST", path)
+        except urllib.error.HTTPError as exc:
+            log.debug("go-librespot : %s refuse (%s)", action, exc)
+            return False, "Aucune lecture Spotify en cours sur l'enceinte."
+        except (OSError, ValueError) as exc:
+            log.debug("go-librespot : %s non transmis (%s)", action, exc)
+            return False, "go-librespot ne répond pas."
+        return True, None
+
     # ── Spotify -> dashboard ─────────────────────────────────────────────
     def _on_volume_event(self, data):
         try:

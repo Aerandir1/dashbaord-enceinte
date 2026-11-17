@@ -163,6 +163,9 @@ def build_state():
             # « playback » est ecrit par librespot-event.sh sur les evenements
             # playing / paused. Avant le premier, une piste chargee joue.
             playback = "paused" if meta.get("playback") == "paused" else "playing"
+        # Seul go-librespot se pilote localement, et seulement avec une session
+        # Spotify ouverte (une piste chargee).
+        can_transport = bool(track) and views._GO_LIBRESPOT is not None and views._GO_LIBRESPOT.connected()
 
     wifi = public.get("wifi") or {}
     system = public.get("system") or {}
@@ -342,9 +345,16 @@ def _transport(cmd):
     if source is None:
         raise OndeError("unavailable", "Aucune source n'est active sur l'enceinte.")
     if source == "spotify":
-        # librespot ne se pilote pas localement : c'est le client Spotify qui
-        # tient la lecture. On le dit plutot que de faire semblant.
-        raise OndeError("unsupported", "La lecture Spotify se pilote depuis l'application Spotify.")
+        if views._GO_LIBRESPOT is None:
+            # librespot ne se pilote pas localement : c'est le client Spotify
+            # qui tient la lecture. On le dit plutot que de faire semblant.
+            raise OndeError("unsupported", "La lecture Spotify se pilote depuis l'application Spotify.")
+        if not current["controls"].get("play"):
+            raise OndeError("unsupported", "Aucune lecture Spotify en cours à piloter.")
+        ok, error = views._GO_LIBRESPOT.playback_command(cmd)
+        if not ok:
+            raise OndeError("failed", error or "go-librespot a refusé la commande.")
+        return
     if not current["controls"].get("play"):
         raise OndeError("unsupported", "Aucune lecture AirPlay en cours à piloter.")
     ok, error = views._send_airplay_playback_command(cmd)

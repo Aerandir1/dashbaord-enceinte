@@ -264,8 +264,10 @@ Choix faits ici :
 - **`playback`** ne vient pas de la carte son : CamillaDSP la garde ouverte en permanence,
   elle semblerait toujours « en lecture ». AirPlay donne l'état par MPRIS (`PlaybackStatus`),
   Spotify par les événements de librespot.
-- **`controls`** : tout est vrai pendant une session AirPlay (MPRIS) ; avec Spotify tout est
-  faux, librespot ne se pilotant que depuis l'application Spotify. Volume, sourdine et source
+- **`controls`** : tout est vrai pendant une session AirPlay (MPRIS). Avec Spotify, tout est
+  faux sous librespot, qui ne se pilote que depuis l'application Spotify ; sous go-librespot
+  (`SPOTIFY_BACKEND=go-librespot`), tout est vrai dès qu'une piste est chargée, les commandes
+  passant par son API locale (`/player/resume`, `/pause`, `/next`, `/prev`). Volume, sourdine et source
   restent possibles dans les deux cas (ALSA et systemd).
 - **`/events`** : un seul fil relit l'état toutes les 2 s tant qu'un client écoute (les
   changements faits depuis le téléphone remontent ainsi), et se réveille aussitôt après une

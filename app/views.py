@@ -1498,6 +1498,12 @@ def api_playback():
         ok, error = _send_airplay_playback_command(action)
         if not ok:
             return jsonify({"error": error}), 400
+    elif _GO_LIBRESPOT is not None:
+        # go-librespot expose une API locale : la commande arrive vraiment au
+        # lecteur, et l'appli Spotify suit.
+        ok, error = _GO_LIBRESPOT.playback_command(action)
+        if not ok:
+            return jsonify({"error": error}), 400
     else:
         # librespot ne se pilote pas depuis l'enceinte : c'est le client
         # Spotify qui controle la lecture. Autant le dire plutot que de faire
