@@ -54,6 +54,22 @@ SERVICE_MANAGER = os.getenv("SERVICE_MANAGER", "systemd").strip().lower()
 # les cartes n'exposent pas "Master" (ex. HiFiBerry DAC+ expose "Digital").
 ALSA_MIXER_CONTROL = os.getenv("ALSA_MIXER_CONTROL", "").strip()
 ALSA_MIXER_CARD = os.getenv("ALSA_MIXER_CARD", "").strip()
+
+# Plafond du volume, en pourcentage du mixeur systeme (courbe amixer -M) :
+# 100 % sur le potar (dashboard, appli Spotify, Onde) vaut VOLUME_MAX_PERCENT %
+# du mixeur. Depuis go-librespot en external_volume, Spotify n'attenue plus le
+# signal : seul le mixeur le fait, et au-dela d'environ 47 % (~ -18 dB) l'ampli
+# TPA3116 sature puis se met en protection (craquement, coupure). 45 garde une
+# marge ; a remonter si l'ampli ou l'alimentation le permettent.
+def _volume_max_percent():
+    try:
+        value = int(os.getenv("VOLUME_MAX_PERCENT", "45"))
+    except ValueError:
+        value = 45
+    return max(1, min(100, value))
+
+
+VOLUME_MAX_PERCENT = _volume_max_percent()
 SUPERVISORCTL_BIN = os.getenv("SUPERVISORCTL_BIN", "supervisorctl")
 SUPERVISORD_CONFIG = os.getenv("SUPERVISORD_CONFIG", "/etc/supervisor/supervisord.conf")
 

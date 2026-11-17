@@ -25,6 +25,7 @@ except Exception:  # pragma: no cover
 from app import app, airplay, eq, golibrespot, netctl, outputs
 from app.config import (
     ALSA_MIXER_CARD,
+    VOLUME_MAX_PERCENT,
     ALSA_MIXER_CONTROL,
     DEVICE_NAME_FILE,
     GO_LIBRESPOT_PORT,
@@ -702,7 +703,37 @@ def _get_alsa_mixer_control():
     return None
 
 
+# ── Plafond du volume ───────────────────────────────────────────────────────
+# Le potar (0-100) est converti en pourcentage du mixeur (0-VOLUME_MAX_PERCENT).
+# La conversion perd de la precision (entiers) : on retient le dernier couple
+# ecrit pour relire exactement la valeur du potar, sinon le curseur sauterait
+# d'un cran apres chaque reglage.
+_VOLUME_LAST_WRITE = {"ui": None, "mixer": None}
+
+
+def _ui_to_mixer_volume(volume):
+    ui = _clamp(int(volume), 0, 100)
+    mixer = _clamp(int(round(ui * VOLUME_MAX_PERCENT / 100.0)), 0, VOLUME_MAX_PERCENT)
+    _VOLUME_LAST_WRITE["ui"] = ui
+    _VOLUME_LAST_WRITE["mixer"] = mixer
+    return mixer
+
+
+def _mixer_to_ui_volume(volume):
+    mixer = _clamp(int(volume), 0, 100)
+    if mixer == _VOLUME_LAST_WRITE["mixer"]:
+        return _VOLUME_LAST_WRITE["ui"]
+    return _clamp(int(round(mixer * 100.0 / VOLUME_MAX_PERCENT)), 0, 100)
+
+
 def _read_system_volume():
+    volume, muted, error = _read_system_volume_raw()
+    if volume is not None:
+        volume = _mixer_to_ui_volume(volume)
+    return volume, muted, error
+
+
+def _read_system_volume_raw():
     backend = _get_system_volume_backend()
     if backend == "wpctl":
         ok, stdout, stderr = _run_command(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"])
@@ -766,9 +797,13 @@ def _set_system_volume(volume=None, mute=None, propagate=True):
 
 
 def _set_system_volume_raw(volume=None, mute=None):
+    """volume : position du potar (0-100), plafonnee ici en volume mixeur."""
     backend = _get_system_volume_backend()
     if not backend:
         return False, "Aucun backend volume système disponible"
+
+    if volume is not None:
+        volume = _ui_to_mixer_volume(volume)
 
     commands = []
     if backend == "wpctl":
@@ -794,7 +829,7 @@ def _set_system_volume_raw(volume=None, mute=None):
             if mute:
                 target_volume = 0
             elif target_volume is None:
-                target_volume = _clamp(int(SPEAKER_STATE["volume"]), 0, 100)
+                target_volume = _ui_to_mixer_volume(SPEAKER_STATE["volume"])
             mute = None
 
         if target_volume is not None:
