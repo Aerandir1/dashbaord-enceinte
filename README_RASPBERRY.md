@@ -159,3 +159,13 @@ Fonctionnement :
 - L'unité systemd garde le nom `librespot.service` : sudoers, exclusivité avec AirPlay et renommage n'ont pas changé.
 - Fichiers : binaire `/usr/local/bin/go-librespot` (version figée par `GO_LIBRESPOT_VERSION` dans `install.sh`), config `/var/lib/go-librespot/config.yml` (régénérée à chaque installation), identifiants `/var/lib/go-librespot/state.json`.
 - Logs : `journalctl -fu librespot` (go-librespot) et `journalctl -fu dashboard-enceinte` (pont).
+
+Différences de niveau sonore entre les deux :
+
+| | librespot | go-librespot |
+|---|---|---|
+| Normalisation | désactivée par défaut | activée par défaut (−14 LUFS, soit 5 à 8 dB de moins sur un titre récent) : **désactivée** dans `deploy/go-librespot.yml` pour retrouver le niveau de librespot |
+| Volume Spotify | atténuation logicielle avant le mixeur | aucune (`external_volume`) : le son arrive à pleine échelle, seul le mixeur l'atténue |
+| Potar du dashboard | mixeur du DAC | mixeur du DAC (le même) |
+
+Avec l'appli Spotify et le dashboard tous les deux à 100 %, les deux implémentations donnent donc le même niveau. Si l'ampli sature en haut du potar (craquement puis coupure), on peut plafonner le mixeur avec `VOLUME_MAX_PERCENT` dans `/etc/default/enceinte` (100 = pas de plafond), puis `sudo systemctl restart dashboard-enceinte`.

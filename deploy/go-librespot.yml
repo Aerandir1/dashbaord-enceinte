@@ -23,6 +23,13 @@ audio_device: default
 external_volume: true
 volume_steps: 100
 
+# ── Niveau identique a librespot ─────────────────────────────────────────
+# go-librespot normalise par defaut chaque titre a -14 LUFS (cible Spotify) :
+# les titres modernes, masterises vers -8 LUFS, perdent ainsi 5 a 8 dB. librespot
+# ne normalise pas par defaut, d'ou un go-librespot nettement moins fort au
+# meme cran du potar. Desactive pour retrouver le niveau de librespot.
+normalisation_disabled: true
+
 # Spotify Connect : decouverte mDNS via avahi (deja installe pour AirPlay et
 # Onde), identifiants conserves apres deconnexion de l'appli.
 zeroconf_enabled: true

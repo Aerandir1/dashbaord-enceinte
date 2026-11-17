@@ -57,15 +57,13 @@ ALSA_MIXER_CARD = os.getenv("ALSA_MIXER_CARD", "").strip()
 
 # Plafond du volume, en pourcentage du mixeur systeme (courbe amixer -M) :
 # 100 % sur le potar (dashboard, appli Spotify, Onde) vaut VOLUME_MAX_PERCENT %
-# du mixeur. Depuis go-librespot en external_volume, Spotify n'attenue plus le
-# signal : seul le mixeur le fait, et au-dela d'environ 47 % (~ -18 dB) l'ampli
-# TPA3116 sature puis se met en protection (craquement, coupure). 45 garde une
-# marge ; a remonter si l'ampli ou l'alimentation le permettent.
+# du mixeur. 100 = aucun plafond, comportement identique a librespot. Ne le
+# baisser que si l'ampli sature (craquement puis coupure) en haut du potar.
 def _volume_max_percent():
     try:
-        value = int(os.getenv("VOLUME_MAX_PERCENT", "45"))
+        value = int(os.getenv("VOLUME_MAX_PERCENT", "100"))
     except ValueError:
-        value = 45
+        value = 100
     return max(1, min(100, value))
 
 

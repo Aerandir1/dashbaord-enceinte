@@ -189,6 +189,10 @@ else
     done < "${DEPLOY_DIR}/enceinte.env"
 fi
 
+# VOLUME_MAX_PERCENT=45 etait le defaut d'une version qui bridait le volume
+# (remplace par 100, sans plafond) : on retire ce plafond herite.
+sed -i "s|^VOLUME_MAX_PERCENT=45$|VOLUME_MAX_PERCENT=100|" "$ENV_FILE"
+
 # Choix de l'etape 0, relu par le dashboard (SPOTIFY_BACKEND) au demarrage.
 if grep -q "^SPOTIFY_BACKEND=" "$ENV_FILE"; then
     sed -i "s|^SPOTIFY_BACKEND=.*|SPOTIFY_BACKEND=${SPOTIFY_BACKEND}|" "$ENV_FILE"
