@@ -164,8 +164,11 @@ Différences de niveau sonore entre les deux :
 
 | | librespot | go-librespot |
 |---|---|---|
-| Normalisation | désactivée par défaut | activée par défaut (−14 LUFS, soit 5 à 8 dB de moins sur un titre récent) : **désactivée** dans `deploy/go-librespot.yml` pour retrouver le niveau de librespot |
-| Volume Spotify | atténuation logicielle avant le mixeur | aucune (`external_volume`) : le son arrive à pleine échelle, seul le mixeur l'atténue |
-| Potar du dashboard | mixeur du DAC | mixeur du DAC (le même) |
+| Normalisation | désactivée par défaut | activée par défaut (−14 LUFS, 5 à 8 dB de moins) : **désactivée** dans `deploy/go-librespot.yml` |
+| Volume Spotify | atténuation logicielle **avant** le mixeur (50 % par défaut = −30 dB, 60 % = −24 dB, 70 % = −18 dB) | aucune (`external_volume`) |
+| Marge avant le mixeur | le volume Spotify | `GO_LIBRESPOT_GAIN_DB` (−26 dB par défaut), via `pcm.golibrespot` de `/etc/asound.conf` |
+| Potar du dashboard | mixeur du DAC (courbe `-M`) | le même mixeur |
 
-Avec l'appli Spotify et le dashboard tous les deux à 100 %, les deux implémentations donnent donc le même niveau. Si l'ampli sature en haut du potar (craquement puis coupure), on peut plafonner le mixeur avec `VOLUME_MAX_PERCENT` dans `/etc/default/enceinte` (100 = pas de plafond), puis `sudo systemctl restart dashboard-enceinte`.
+Pourquoi le master pouvait monter près de 100 % avec librespot et coupait vers 47 % avec go-librespot : librespot atténuait déjà le son de 20 à 30 dB avec le volume Spotify. go-librespot, lui, envoyait le son à pleine échelle, et le mixeur à 47 % (−19 dB) suffisait à faire saturer l'ampli. La marge fixe rend à go-librespot ce que faisait le volume Spotify de librespot : les deux potars gardent toute leur course.
+
+Réglage : `GO_LIBRESPOT_GAIN_DB` dans `/etc/default/enceinte`, puis `sudo ./deploy/install.sh --spotify=go-librespot` (régénère `/etc/asound.conf`) et `sudo systemctl restart librespot`. Remonter par pas de 2 dB (−24, −22…) tant que l'ampli ne coupe pas potar à fond. `VOLUME_MAX_PERCENT` (plafond du mixeur, toutes sources) reste disponible mais vaut 100 par défaut.

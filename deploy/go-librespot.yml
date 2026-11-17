@@ -10,9 +10,10 @@ log_disable_timestamp: true
 
 device_type: speaker
 audio_backend: alsa
-# Remplace par ALSA_DEVICE (-c audio_device=...) ; "default" = le dmix de
-# /etc/asound.conf, qui ecrit dans la boucle lue par CamillaDSP.
-audio_device: default
+# Remplace par GO_LIBRESPOT_DEVICE (-c audio_device=...) : "golibrespot" =
+# marge fixe puis le dmix de /etc/asound.conf, qui ecrit dans la boucle lue
+# par CamillaDSP.
+audio_device: golibrespot
 
 # ── Volume jumeau ────────────────────────────────────────────────────────
 # external_volume : go-librespot N'APPLIQUE PAS le volume au son, il tient

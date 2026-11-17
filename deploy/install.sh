@@ -268,7 +268,19 @@ case "$ALSA_DEVICE" in
 esac
 
 echo "==> Configuration ALSA partagee (/etc/asound.conf, ctl -> ${CTL_CARD})"
-sed -e "s|@CTL_CARD@|${CTL_CARD}|g" "${DEPLOY_DIR}/asound.conf" > /etc/asound.conf
+# Marge fixe de go-librespot (voir asound.conf) : dB -> coefficient lineaire.
+GO_LIBRESPOT_GAIN_DB="$(read_env GO_LIBRESPOT_GAIN_DB -26)"
+GO_LIBRESPOT_GAIN="$(python3 -c 'import sys
+try:
+    db = float(sys.argv[1])
+except ValueError:
+    db = -26.0
+db = max(-60.0, min(0.0, db))
+print(f"{10 ** (db / 20):.6f}")' "$GO_LIBRESPOT_GAIN_DB")"
+echo "==> Marge go-librespot : ${GO_LIBRESPOT_GAIN_DB} dB (x${GO_LIBRESPOT_GAIN})"
+sed -e "s|@CTL_CARD@|${CTL_CARD}|g" \
+    -e "s|@GO_LIBRESPOT_GAIN@|${GO_LIBRESPOT_GAIN}|g" \
+    "${DEPLOY_DIR}/asound.conf" > /etc/asound.conf
 
 # --- Boucle ALSA + CamillaDSP (egaliseur) -----------------------------------
 # Les sources ecrivent dans la boucle, CamillaDSP y lit, egalise, et alimente
