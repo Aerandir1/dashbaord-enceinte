@@ -483,7 +483,7 @@ nodes:
       - Le logiciel gère la sortie PCM5102A (voir volume-commun-pcm5102a)
   - id: airplay-2
     title: 'AirPlay 2 : shairport-sync compilé + nqptp (latence ~2 s → ~0,5 s)'
-    status: in_progress
+    status: done
     depends_on: []
     goal: Réduire le délai entre le téléphone ou l'ordinateur et l'enceinte. Le paquet Debian de shairport-sync ne fait que de l'AirPlay 1, avec une latence d'environ 2 s imposée par l'émetteur.
     implementation:
