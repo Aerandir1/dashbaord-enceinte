@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Installation native (sans Docker) de l'enceinte :
-#   - shairport-sync (AirPlay)   -> service systemd, ordonnancement temps reel
+#   - shairport-sync (AirPlay 2) -> compile, service systemd, temps reel
+#     (+ nqptp, l'horloge exigee par l'AirPlay 2)
 #   - librespot (Spotify Connect)-> service systemd, PAS de temps reel
 #     (ou go-librespot, EXPERIMENTAL : volume synchronise avec l'appli Spotify)
 #   - dashboard web              -> service systemd
@@ -18,6 +19,10 @@ ENV_FILE="/etc/default/enceinte"
 
 # go-librespot : version figee, une mise a jour reste un choix delibere.
 GO_LIBRESPOT_VERSION="${GO_LIBRESPOT_VERSION:-v0.10.5}"
+# shairport-sync (AirPlay 2) et son horloge nqptp, compiles depuis les sources :
+# versions figees elles aussi.
+SHAIRPORT_SYNC_VERSION="${SHAIRPORT_SYNC_VERSION:-5.6.3}"
+NQPTP_VERSION="${NQPTP_VERSION:-1.2.9}"
 
 SPOTIFY_BACKEND_ARG=""
 for arg in "$@"; do
@@ -94,12 +99,96 @@ fi
 echo "==> Installation des paquets systeme"
 apt-get update -qq
 apt-get install -y --no-install-recommends \
-    shairport-sync \
     avahi-daemon libnss-mdns \
     alsa-utils \
     python3-venv python3-dev \
     curl ca-certificates \
     libasound2 libpulse0
+
+# --- 2b. shairport-sync AirPlay 2 + nqptp ------------------------------------
+# Le paquet Debian de shairport-sync n'est compile que pour l'AirPlay 1 :
+# l'emetteur y impose une latence d'environ 2 s (lecture, pause, morceau
+# suivant). En AirPlay 2 ("buffered audio"), le son part presque tout de suite,
+# mais il faut compiler shairport-sync et faire tourner nqptp (horloge PTP,
+# ports UDP 319 et 320). Les fichiers .version evitent de recompiler (15 a
+# 30 min sur un Pi 3) a chaque installation.
+SPS_VERSION_FILE=/usr/local/lib/shairport-sync.version
+NQPTP_VERSION_FILE=/usr/local/lib/nqptp.version
+NEED_SPS=0
+NEED_NQPTP=0
+if [ ! -x /usr/local/bin/shairport-sync ] \
+    || [ "$(cat "$SPS_VERSION_FILE" 2>/dev/null)" != "$SHAIRPORT_SYNC_VERSION" ]; then
+    NEED_SPS=1
+fi
+if [ ! -x /usr/local/bin/nqptp ] \
+    || [ "$(cat "$NQPTP_VERSION_FILE" 2>/dev/null)" != "$NQPTP_VERSION" ]; then
+    NEED_NQPTP=1
+fi
+
+if [ "$NEED_SPS" = 1 ] || [ "$NEED_NQPTP" = 1 ]; then
+    echo "==> Outils de compilation pour shairport-sync / nqptp"
+    # Liste du BUILD.md de shairport-sync 5.x ; libglib2.0-dev fournit
+    # gdbus-codegen (interface MPRIS lue par le dashboard), systemd-dev
+    # l'emplacement des unites systemd (requis sur Debian 13).
+    apt-get install -y --no-install-recommends \
+        build-essential git autoconf automake libtool pkgconf \
+        libpopt-dev libconfig-dev libasound2-dev libavahi-client-dev \
+        libssl-dev libsoxr-dev libplist-dev libsodium-dev uuid-dev \
+        libgcrypt20-dev xxd libplist-utils \
+        libavutil-dev libavcodec-dev libavformat-dev \
+        libglib2.0-dev systemd-dev
+    BUILD_ROOT=/usr/local/src/enceinte
+    install -d "$BUILD_ROOT"
+    # 2 taches : le Pi 3 n'a que 1 Go de RAM.
+    BUILD_JOBS=2
+fi
+
+if [ "$NEED_NQPTP" = 1 ]; then
+    echo "==> Compilation de nqptp ${NQPTP_VERSION}"
+    rm -rf "${BUILD_ROOT}/nqptp"
+    git clone -q --depth 1 --branch "$NQPTP_VERSION" \
+        https://github.com/mikebrady/nqptp.git "${BUILD_ROOT}/nqptp"
+    (
+        cd "${BUILD_ROOT}/nqptp"
+        autoreconf -fi
+        ./configure --with-systemd-startup
+        make -j"$BUILD_JOBS"
+        make install
+    )
+    install -d /usr/local/lib
+    printf '%s\n' "$NQPTP_VERSION" > "$NQPTP_VERSION_FILE"
+else
+    echo "==> nqptp ${NQPTP_VERSION} deja present"
+fi
+
+if [ "$NEED_SPS" = 1 ]; then
+    # Le paquet Debian doit partir : son unite systemd empecherait "make
+    # install" de poser celle d'amont (qui lance /usr/local/bin), et deux
+    # binaires shairport-sync se marcheraient dessus. La purge retire aussi
+    # /etc/shairport-sync.conf, regenere plus bas (etape 6).
+    if dpkg -s shairport-sync >/dev/null 2>&1; then
+        echo "==> Retrait du paquet Debian shairport-sync (AirPlay 1 seulement)"
+        systemctl stop shairport-sync >/dev/null 2>&1 || true
+        apt-get purge -y shairport-sync
+    fi
+    echo "==> Compilation de shairport-sync ${SHAIRPORT_SYNC_VERSION} (AirPlay 2, 15 a 30 min)"
+    rm -rf "${BUILD_ROOT}/shairport-sync"
+    git clone -q --depth 1 --branch "$SHAIRPORT_SYNC_VERSION" \
+        https://github.com/mikebrady/shairport-sync.git "${BUILD_ROOT}/shairport-sync"
+    (
+        cd "${BUILD_ROOT}/shairport-sync"
+        autoreconf -fi
+        ./configure --sysconfdir=/etc --with-alsa --with-soxr --with-avahi \
+            --with-ssl=openssl --with-systemd-startup --with-airplay-2 \
+            --with-metadata --with-metadata-pipe --with-mpris-interface
+        make -j"$BUILD_JOBS"
+        make install
+    )
+    printf '%s\n' "$SHAIRPORT_SYNC_VERSION" > "$SPS_VERSION_FILE"
+else
+    echo "==> shairport-sync ${SHAIRPORT_SYNC_VERSION} deja present"
+fi
+/usr/local/bin/shairport-sync -V
 
 # --- 3. librespot / go-librespot --------------------------------------------
 if [ "$SPOTIFY_BACKEND" = "go-librespot" ]; then
@@ -524,7 +613,9 @@ systemctl stop "$OTHER_UNIT" >/dev/null 2>&1 || true
 # CamillaDSP doit demarrer AVANT la source : c'est lui qui consomme la boucle,
 # sinon la source ecrit dans le vide.
 failed=0
-for unit in avahi-daemon camilladsp "$SOURCE_UNIT" dashboard-enceinte; do
+# nqptp tourne en permanence : shairport-sync peut etre lance a tout moment
+# depuis le dashboard, et l'AirPlay 2 ne demarre pas sans son horloge.
+for unit in avahi-daemon nqptp camilladsp "$SOURCE_UNIT" dashboard-enceinte; do
     systemctl enable "$unit" >/dev/null 2>&1 || true
     systemctl restart "$unit" || true
     sleep 1
