@@ -481,3 +481,18 @@ nodes:
     done_when:
       - Le PCB est routé sans erreur de règles (DRC)
       - Le logiciel gère la sortie PCM5102A (voir volume-commun-pcm5102a)
+  - id: airplay-2
+    title: 'AirPlay 2 : shairport-sync compilé + nqptp (latence ~2 s → ~0,5 s)'
+    status: in_progress
+    depends_on: []
+    goal: Réduire le délai entre le téléphone ou l'ordinateur et l'enceinte. Le paquet Debian de shairport-sync ne fait que de l'AirPlay 1, avec une latence d'environ 2 s imposée par l'émetteur.
+    implementation:
+      - install.sh compile shairport-sync 5.6.3 (--with-airplay-2, MPRIS, tube de métadonnées) et nqptp 1.2.9, versions figées, fichiers .version pour ne pas recompiler
+      - Purge du paquet Debian shairport-sync (sinon l'unité systemd d'amont n'est pas installée)
+      - 'shairport-sync.conf : sortie forcée en 44100 Hz / S16_LE / 2 canaux pour coller au dmix, interpolation auto'
+      - nqptp activé au démarrage
+    done_when:
+      - L'enceinte apparaît en AirPlay 2 sur iPhone / Mac
+      - Le démarrage et la pause réagissent en moins d'une seconde
+      - Pochette, titre et boutons du dashboard marchent toujours en AirPlay
+    section: sources
