@@ -478,6 +478,22 @@ else
     # index (hw:0,0) reste acceptee alors qu'elle peut viser la mauvaise carte
     # depuis l'ajout du jack. On migre donc toute sortie indexee vers le nom,
     # sans toucher aux filtres.
+    #
+    # Passage de la boucle en 32 bits : l'entree de CamillaDSP doit suivre le
+    # dmix de /etc/asound.conf, sinon la boucle refuse le format. Fait par
+    # simple remplacement de texte (sans PyYAML) dans le bloc "capture", pour
+    # ne jamais laisser une ancienne config en 16 bits.
+    python3 - "$CAMILLA_CONF" <<'PYEOF'
+import re, sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+m = re.search(r"(?ms)^(\s*)capture:\s*\n(.*?)(?=^\1\S|\Z)", text)
+if m and re.search(r"format:\s*S16_LE", m.group(2)):
+    block = re.sub(r"format:\s*S16_LE", "format: S32_LE", m.group(2), count=1)
+    text = text[:m.start(2)] + block + text[m.end(2):]
+    open(path, "w", encoding="utf-8").write(text)
+    print("    entree CamillaDSP migree en S32_LE (boucle 32 bits)")
+PYEOF
     python3 - "$CAMILLA_CONF" "$PLAYBACK_DEVICE" <<'PYEOF'
 import re, sys
 try:
