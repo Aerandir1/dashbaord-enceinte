@@ -397,6 +397,10 @@ def _read_exact(stream, size):
 _KNOWN_FOURCC = {
     "core",
     "ssnc",
+    # Format du flux AirPlay : type (Realtime / Buffered), source, sortie.
+    "styp",
+    "sdsc",
+    "odsc",
     "minm",
     "asar",
     "asal",
@@ -460,6 +464,13 @@ def _parse_xml_metadata_item(item_text):
     return item_type, item_code, payload
 
 
+_AIRPLAY_FORMAT_LABELS = {
+    "styp": "type de flux",
+    "sdsc": "format recu",
+    "odsc": "format de sortie",
+}
+
+
 def _handle_airplay_metadata_item(item_type, item_code, payload):
     if item_type == "ssnc":
         text_payload = _decode_meta_text(payload)
@@ -473,6 +484,11 @@ def _handle_airplay_metadata_item(item_type, item_code, payload):
             _update_airplay_remote("dacp_id", text_payload)
         elif item_code in {"disc", "aend", "pend"}:
             _clear_airplay_remote()
+        elif item_code in _AIRPLAY_FORMAT_LABELS and text_payload:
+            # Ex. "Buffered" / "ALAC/48000/S24_LE/2" : dit si l'appli envoie du
+            # lossless (ALAC) ou du compresse (AAC). Visible dans
+            # journalctl -u dashboard-enceinte.
+            app.logger.warning("AirPlay %s : %s", _AIRPLAY_FORMAT_LABELS[item_code], text_payload)
 
     if item_code in _META_FIELD_BY_CODE:
         value = _decode_meta_text(payload)
