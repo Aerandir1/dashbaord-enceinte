@@ -1,0 +1,22 @@
+# Service UTILISATEUR, a installer SUR L'ORDINATEUR :
+#   install -Dm755 deploy/enceinte-rtp-latence ~/.local/bin/enceinte-rtp-latence
+#   install -Dm644 deploy/enceinte-rtp-latence.service ~/.config/systemd/user/enceinte-rtp-latence.service
+#   systemctl --user daemon-reload && systemctl --user enable --now enceinte-rtp-latence
+#
+# Reapplique le delai de l'enceinte a chaque (re)demarrage de PipeWire, qui le
+# perd sinon. Pour changer le delai : modifier le nombre de millisecondes
+# ci-dessous, puis systemctl --user daemon-reload && systemctl --user restart
+# enceinte-rtp-latence.
+
+[Unit]
+Description=Delai de l'enceinte annonce a PipeWire (synchro image/son en RTP)
+After=pipewire.service wireplumber.service
+PartOf=pipewire.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=%h/.local/bin/enceinte-rtp-latence 300
+
+[Install]
+WantedBy=pipewire.service

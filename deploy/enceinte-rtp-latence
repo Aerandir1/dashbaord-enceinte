@@ -1,0 +1,29 @@
+#!/bin/sh
+# A installer SUR L'ORDINATEUR, avec enceinte-rtp-latence.service.
+#
+# Annonce a PipeWire le delai que l'enceinte ajoute apres l'ordinateur (tampon
+# anti-gigue RTP, recepteur, boucle ALSA, CamillaDSP, DAC). Les applications
+# (Firefox, lecteurs video) retardent alors l'image d'autant : image et son
+# restent synchronises, comme en AirPlay. Le module rtp-sink n'ayant pas de
+# reglage pour cela, on pose le parametre ProcessLatency sur la sortie une fois
+# qu'elle existe.
+#
+# Usage : enceinte-rtp-latence [delai_en_ms]   (300 par defaut, cale a l'oeil
+# sur une video le 24/11/2026 avec RTP_LATENCY_MS=60).
+
+LATENCE_MS="${1:-300}"
+NOEUD="rtp-sink-enceinte"
+
+i=0
+while [ "$i" -lt 30 ]; do
+    id="$(pw-cli ls Node 2>/dev/null | awk -v n="$NOEUD" '
+        /^[[:space:]]*id / { gsub(",", "", $2); id = $2 }
+        $0 ~ "node.name = \"" n "\"" { print id; exit }')"
+    if [ -n "$id" ]; then
+        pw-cli s "$id" ProcessLatency "{ ns = $((LATENCE_MS * 1000000)) }" >/dev/null && exit 0
+    fi
+    i=$((i + 1))
+    sleep 1
+done
+echo "Sortie ${NOEUD} introuvable : deploy/pipewire-rtp-enceinte.conf est-il installe ?" >&2
+exit 1
