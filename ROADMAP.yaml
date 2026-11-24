@@ -498,7 +498,7 @@ nodes:
     section: sources
   - id: source-rtp-ordinateur
     title: "Source « Ordinateur » : son de l'ordinateur par RTP, sans perte"
-    status: in_progress
+    status: done
     depends_on: []
     goal: Envoyer le son de l'ordinateur à l'enceinte sans perte (24 bits) et avec un délai court, au lieu de l'AirPlay 1 de PipeWire (16 bits, ~2 s).
     implementation:
