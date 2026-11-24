@@ -496,3 +496,18 @@ nodes:
       - Le démarrage et la pause réagissent en moins d'une seconde
       - Pochette, titre et boutons du dashboard marchent toujours en AirPlay
     section: sources
+  - id: source-rtp-ordinateur
+    title: "Source « Ordinateur » : son de l'ordinateur par RTP, sans perte"
+    status: in_progress
+    depends_on: []
+    goal: Envoyer le son de l'ordinateur à l'enceinte sans perte (24 bits) et avec un délai court, au lieu de l'AirPlay 1 de PipeWire (16 bits, ~2 s).
+    implementation:
+      - Récepteur GStreamer rtp-receiver.service (L24 / 44,1 kHz / stéréo vers le dmix)
+      - Conflicts= croisés avec les autres sources, DEFAULT_SOURCE=rtp possible
+      - 'Dashboard : la case Music Assistant devient « Ordinateur »'
+      - 'Émetteur PipeWire : deploy/pipewire-rtp-enceinte.conf'
+    done_when:
+      - La source « Ordinateur » s'active depuis le dashboard
+      - Le son de l'ordinateur sort sans coupure
+      - Délai nettement plus court qu'en AirPlay
+    section: sources
