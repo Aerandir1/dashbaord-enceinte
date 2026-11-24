@@ -16,6 +16,11 @@ SHAIRPORT_SYNC_USE_SUDO = _get_bool_env("SHAIRPORT_SYNC_USE_SUDO")
 LIBRESPOT_SERVICE = os.getenv("LIBRESPOT_SERVICE", "librespot")
 LIBRESPOT_SYSTEMD_USER = _get_bool_env("LIBRESPOT_SYSTEMD_USER", "true")
 LIBRESPOT_USE_SUDO = _get_bool_env("LIBRESPOT_USE_SUDO")
+# Recepteur RTP (son de l'ordinateur, sans perte) : service systemd systeme,
+# pilote comme les autres sources (sudo limite, voir deploy/dashboard-sudoers).
+RTP_SERVICE = os.getenv("RTP_SERVICE", "rtp-receiver")
+RTP_SYSTEMD_USER = _get_bool_env("RTP_SYSTEMD_USER")
+RTP_USE_SUDO = _get_bool_env("RTP_USE_SUDO", "true")
 SHAIRPORT_METADATA_PIPE = os.getenv("SHAIRPORT_METADATA_PIPE", "/tmp/shairport-sync-metadata")
 
 # Interface MPRIS de shairport-sync (bus systeme D-Bus). C'est la voie propre,

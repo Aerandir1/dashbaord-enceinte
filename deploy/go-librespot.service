@@ -11,7 +11,7 @@ After=network-online.target sound.target avahi-daemon.service
 Wants=network-online.target
 
 # Une seule source audio a la fois (voir librespot.service).
-Conflicts=shairport-sync.service
+Conflicts=shairport-sync.service rtp-receiver.service
 StartLimitIntervalSec=60
 StartLimitBurst=5
 

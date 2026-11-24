@@ -7,7 +7,7 @@ Wants=network-online.target
 # Une seule source audio a la fois : demarrer librespot arrete shairport-sync.
 # Declare a systemd, l'exclusivite tient meme si un service est demarre a la
 # main, hors du dashboard.
-Conflicts=shairport-sync.service
+Conflicts=shairport-sync.service rtp-receiver.service
 
 # Garde-fou : si les deux services devaient malgre tout se relancer
 # mutuellement, systemd coupe court au bout de 5 demarrages en 60 s au lieu de

@@ -156,6 +156,10 @@ def build_state():
         # MPRIS n'existe que pendant une session AirPlay : sans elle, il n'y a
         # rien a reprendre ni a passer.
         can_transport = bool(md.get("available"))
+    elif source == "rtp":
+        # Aucune metadonnee ni commande : seul l'etat reel de la carte son dit
+        # si l'ordinateur envoie du son.
+        playback = "playing" if public.get("is_playing") else "idle"
     elif source == "spotify":
         meta = views._get_spotify_metadata_snapshot()
         track = _spotify_track(meta)
@@ -344,6 +348,8 @@ def _transport(cmd):
     source = current["source"]
     if source is None:
         raise OndeError("unavailable", "Aucune source n'est active sur l'enceinte.")
+    if source == "rtp":
+        raise OndeError("unsupported", "Le son de l'ordinateur (RTP) se pilote depuis l'ordinateur.")
     if source == "spotify":
         if views._GO_LIBRESPOT is None:
             # librespot ne se pilote pas localement : c'est le client Spotify

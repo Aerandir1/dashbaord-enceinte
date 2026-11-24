@@ -32,6 +32,9 @@ from app.config import (
     HOTSPOT_MARKER_FILE,
     LIBRESPOT_METADATA_FILE,
     LIBRESPOT_SERVICE,
+    RTP_SERVICE,
+    RTP_SYSTEMD_USER,
+    RTP_USE_SUDO,
     LIBRESPOT_SYSTEMD_USER,
     LIBRESPOT_USE_SUDO,
     SERVICE_MANAGER,
@@ -54,6 +57,7 @@ SPEAKER_STATE = {
     "services": {
         "spotify": {"name": "Spotify", "online": True},
         "airplay": {"name": "AirPlay", "online": True},
+        "rtp": {"name": "Ordinateur", "online": False},
     },
     "active_service": "spotify",
     "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -239,6 +243,14 @@ SERVICE_BACKENDS = {
         "use_sudo": LIBRESPOT_USE_SUDO,
         "label": SPOTIFY_BACKEND if SPOTIFY_BACKEND == "go-librespot" else "librespot",
         "process_name": "go-librespot" if SPOTIFY_BACKEND == "go-librespot" else "librespot",
+    },
+    # Son de l'ordinateur par RTP (PipeWire module-rtp-sink), sans perte.
+    "rtp": {
+        "unit": RTP_SERVICE,
+        "systemd_user": RTP_SYSTEMD_USER,
+        "use_sudo": RTP_USE_SUDO,
+        "label": "récepteur RTP",
+        "process_name": "gst-launch-1.0",
     },
 }
 
@@ -1353,6 +1365,10 @@ def _public_state():
         else:
             current_track = "En attente de metadonnees Spotify"
             current_artist = "Demarre une lecture Spotify"
+    elif active_service_key == "rtp":
+        # Flux PCM brut : RTP ne transporte aucune metadonnee.
+        current_track = "Son de l'ordinateur"
+        current_artist = "Flux RTP sans perte"
 
     audio_stream = _get_audio_stream_info()
     # L'etat de lecture reel : c'est le materiel qui fait foi, pas un booleen
@@ -1508,6 +1524,13 @@ def api_playback():
         return jsonify({"error": "La source audio active est hors ligne"}), 400
 
     action = action if action in {"play", "pause", "next", "previous", "toggle"} else "toggle"
+
+    if active_service_key == "rtp":
+        # RTP ne transporte que le son : aucune voie de retour vers l'ordinateur.
+        return (
+            jsonify({"error": "La lecture se pilote depuis l'ordinateur."}),
+            400,
+        )
 
     if active_service_key == "airplay":
         # Commande reellement transmise a l'emetteur via DACP.

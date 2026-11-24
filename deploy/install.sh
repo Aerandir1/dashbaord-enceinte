@@ -3,6 +3,7 @@
 # Installation native (sans Docker) de l'enceinte :
 #   - shairport-sync (AirPlay 2) -> compile, service systemd, temps reel
 #     (+ nqptp, l'horloge exigee par l'AirPlay 2)
+#   - recepteur RTP (son de l'ordinateur, sans perte) -> GStreamer, systemd
 #   - librespot (Spotify Connect)-> service systemd, PAS de temps reel
 #     (ou go-librespot, EXPERIMENTAL : volume synchronise avec l'appli Spotify)
 #   - dashboard web              -> service systemd
@@ -101,6 +102,8 @@ apt-get update -qq
 apt-get install -y --no-install-recommends \
     avahi-daemon libnss-mdns \
     alsa-utils \
+    gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+    gstreamer1.0-alsa \
     python3-venv python3-dev \
     curl ca-certificates \
     libasound2 libpulse0
@@ -565,6 +568,18 @@ sed -e "s|@RUN_USER@|${RUN_USER}|g" -e "s|@APP_DIR@|${APP_DIR}|g" \
 sed -e "s|@RUN_USER@|${RUN_USER}|g" -e "s|@APP_DIR@|${APP_DIR}|g" \
     "${DEPLOY_DIR}/dashboard-enceinte.service" > /etc/systemd/system/dashboard-enceinte.service
 
+# Recepteur RTP (source "Ordinateur") : port et tampon lus dans l'environnement,
+# entiers verifies (ils finissent dans la ligne de commande de gst-launch).
+RTP_PORT="$(read_env RTP_PORT 46000)"
+RTP_LATENCY_MS="$(read_env RTP_LATENCY_MS 60)"
+case "$RTP_PORT" in ''|*[!0-9]*) RTP_PORT=46000 ;; esac
+case "$RTP_LATENCY_MS" in ''|*[!0-9]*) RTP_LATENCY_MS=60 ;; esac
+sed -e "s|@RUN_USER@|${RUN_USER}|g" \
+    -e "s|@RTP_PORT@|${RTP_PORT}|g" \
+    -e "s|@RTP_LATENCY_MS@|${RTP_LATENCY_MS}|g" \
+    -e "s|@ALSA_DEVICE@|${ALSA_DEVICE}|g" \
+    "${DEPLOY_DIR}/rtp-receiver.service" > /etc/systemd/system/rtp-receiver.service
+
 # --- 8. Droits sudo du dashboard --------------------------------------------
 echo "==> Droits sudo (limites aux deux services audio)"
 sed -e "s|@RUN_USER@|${RUN_USER}|g" \
@@ -612,19 +627,23 @@ esac
 echo "==> Activation des services"
 systemctl daemon-reload
 
-# Exclusivite : les deux sources se disputent la carte son et se declarent
-# mutuellement Conflicts=. Les activer toutes les deux au demarrage
-# provoquerait un conflit ; une seule demarre donc au boot, l'autre est lancee
-# a la demande depuis le dashboard.
+# Exclusivite : les sources se disputent la carte son et se declarent
+# mutuellement Conflicts=. Les activer toutes au demarrage provoquerait un
+# conflit ; une seule demarre donc au boot, les autres sont lancees a la
+# demande depuis le dashboard.
 DEFAULT_SOURCE="$(read_env DEFAULT_SOURCE spotify)"
 case "$DEFAULT_SOURCE" in
-    airplay) SOURCE_UNIT="shairport-sync"; OTHER_UNIT="librespot" ;;
-    *)       SOURCE_UNIT="librespot";      OTHER_UNIT="shairport-sync" ;;
+    airplay) SOURCE_UNIT="shairport-sync" ;;
+    rtp)     SOURCE_UNIT="rtp-receiver" ;;
+    *)       SOURCE_UNIT="librespot" ;;
 esac
 echo "    source au demarrage : ${DEFAULT_SOURCE} (${SOURCE_UNIT})"
 
-systemctl disable "$OTHER_UNIT" >/dev/null 2>&1 || true
-systemctl stop "$OTHER_UNIT" >/dev/null 2>&1 || true
+for OTHER_UNIT in librespot shairport-sync rtp-receiver; do
+    [ "$OTHER_UNIT" = "$SOURCE_UNIT" ] && continue
+    systemctl disable "$OTHER_UNIT" >/dev/null 2>&1 || true
+    systemctl stop "$OTHER_UNIT" >/dev/null 2>&1 || true
+done
 
 # CamillaDSP doit demarrer AVANT la source : c'est lui qui consomme la boucle,
 # sinon la source ecrit dans le vide.

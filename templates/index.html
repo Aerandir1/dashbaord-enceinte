@@ -105,7 +105,7 @@
           id="sourceSelector"
           role="radiogroup"
           aria-label="Source audio active"
-          data-index="{{ 0 if state.active_service == 'spotify' else 1 if state.active_service == 'airplay' else 3 }}"
+          data-index="{{ 0 if state.active_service == 'spotify' else 1 if state.active_service == 'airplay' else 2 if state.active_service == 'rtp' else 3 }}"
           data-source="{{ state.active_service or 'none' }}"
         >
           <span class="source-lamp" aria-hidden="true"></span>
@@ -122,20 +122,15 @@
             <span>AirPlay</span>
           </button>
 
-          {# Squeezelite / Slimproto : pas encore branche cote serveur. L'entree
-             est visible pour annoncer la suite, mais explicitement inactive. #}
-          <button type="button" class="source-option is-planned" role="radio"
-                  data-source="musicassistant" aria-checked="false"
-                  disabled aria-disabled="true"
-                  title="Bientôt : lecture via Music Assistant (Squeezelite)">
+          {# Son de l'ordinateur par RTP (PipeWire module-rtp-sink), sans perte. #}
+          <button type="button" class="source-option" role="radio" data-source="rtp"
+                  aria-checked="{{ 'true' if state.active_service == 'rtp' else 'false' }}"
+                  title="Son de l'ordinateur par RTP (PipeWire), sans perte">
             <svg class="source-logo" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <rect x="3"  y="9"  width="3" height="6"  rx="1.5" fill="currentColor"/>
-              <rect x="8"  y="5"  width="3" height="14" rx="1.5" fill="currentColor"/>
-              <rect x="13" y="8"  width="3" height="8"  rx="1.5" fill="currentColor"/>
-              <rect x="18" y="11" width="3" height="2"  rx="1"   fill="currentColor"/>
+              <rect x="3" y="4" width="18" height="12" rx="1" stroke="currentColor" stroke-width="2.2"/>
+              <path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
             </svg>
-            <span>Music Assistant</span>
-            <span class="source-badge">Bientôt</span>
+            <span>Ordinateur</span>
           </button>
 
           <button type="button" class="source-option" role="radio" data-source="none"

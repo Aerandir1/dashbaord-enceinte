@@ -1,10 +1,10 @@
-# Autorise le dashboard a piloter UNIQUEMENT les deux services audio.
+# Autorise le dashboard a piloter UNIQUEMENT les services audio (sources).
 # Installe vers /etc/sudoers.d/dashboard-enceinte (mode 0440).
 #
 # Portee volontairement minimale : demarrer, arreter et lire l'etat de
-# shairport-sync et librespot. Aucun autre droit root n'est accorde.
+# shairport-sync, librespot et du recepteur RTP. Aucun autre droit root n'est accorde.
 
-@RUN_USER@ ALL=(root) NOPASSWD: /usr/bin/systemctl start shairport-sync, /usr/bin/systemctl stop shairport-sync, /usr/bin/systemctl is-active shairport-sync, /usr/bin/systemctl start librespot, /usr/bin/systemctl stop librespot, /usr/bin/systemctl is-active librespot
+@RUN_USER@ ALL=(root) NOPASSWD: /usr/bin/systemctl start shairport-sync, /usr/bin/systemctl stop shairport-sync, /usr/bin/systemctl is-active shairport-sync, /usr/bin/systemctl start librespot, /usr/bin/systemctl stop librespot, /usr/bin/systemctl is-active librespot, /usr/bin/systemctl start rtp-receiver, /usr/bin/systemctl stop rtp-receiver, /usr/bin/systemctl is-active rtp-receiver
 
 # Renommage + Wi-Fi + point d'acces : un unique helper root, qui VALIDE lui-meme
 # tous ses arguments (ils viennent d'une requete web). Le helper doit rester

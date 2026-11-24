@@ -1,8 +1,8 @@
 // Ordre des entrées dans le sélecteur : il pilote la position du témoin.
-// "musicassistant" occupe sa place mais n'est pas encore branchée côté
-// serveur ; elle est annoncée dans l'interface et reste non sélectionnable.
-const SOURCE_ORDER = ['spotify', 'airplay', 'musicassistant', 'none'];
-const SOURCE_PLANNED = new Set(['musicassistant']);
+// "rtp" : le son de l'ordinateur (PipeWire module-rtp-sink), sans perte.
+const SOURCE_ORDER = ['spotify', 'airplay', 'rtp', 'none'];
+// Entrées annoncées mais pas encore branchées (non sélectionnables).
+const SOURCE_PLANNED = new Set();
 
 // Interface d'appareil, pas page web : ni pincement, ni double-tap, ni
 // Ctrl+molette / Ctrl+± pour zoomer (iOS ignore user-scalable=no).
@@ -219,7 +219,9 @@ function render(state) {
       state.active_service_name || services[state.active_service]?.name || 'Aucune';
   }
 
-  const hasPlayableSource = Boolean(state.active_service) && Boolean(services[state.active_service]?.online);
+  // RTP ne transporte que le son : la lecture se pilote depuis l'ordinateur.
+  const hasPlayableSource = Boolean(state.active_service) && Boolean(services[state.active_service]?.online)
+    && state.active_service !== 'rtp';
   document.querySelectorAll('[data-playback]').forEach((button) => {
     button.disabled = !hasPlayableSource;
   });

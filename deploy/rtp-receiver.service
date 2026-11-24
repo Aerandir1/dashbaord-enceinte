@@ -1,0 +1,50 @@
+# Recepteur RTP : le son de l'ordinateur, sans perte, vers l'enceinte.
+# Installe par deploy/install.sh vers /etc/systemd/system/rtp-receiver.service
+# (les valeurs @...@ sont remplacees a l'installation).
+#
+# Cote ordinateur : PipeWire, module-rtp-sink (deploy/pipewire-rtp-enceinte.conf), en
+# L24 (24 bits) / 44100 Hz / stereo vers le port @RTP_PORT@ de l'enceinte.
+# Un fichier multicanal est mixe en stereo par PipeWire avant l'envoi :
+# l'enceinte n'a que deux canaux.
+#
+# Chaine : udpsrc -> rtpjitterbuffer (remet les paquets en ordre, absorbe la
+# gigue du Wi-Fi) -> rtpL24depay -> 32 bits / 44100 Hz -> dmix ("default"),
+# comme shairport-sync et librespot. Aucune compression, aucune perte.
+#
+# Securite : RTP n'est ni chiffre ni authentifie. Tout appareil du reseau local
+# peut envoyer du son sur ce port tant que la source "Ordinateur" est active.
+
+[Unit]
+Description=Recepteur RTP (son de l'ordinateur) pour l'enceinte
+Wants=network-online.target
+After=network-online.target sound.target camilladsp.service
+# Une seule source audio a la fois.
+Conflicts=librespot.service shairport-sync.service
+
+[Service]
+Type=simple
+User=@RUN_USER@
+SupplementaryGroups=audio
+ExecStart=/usr/bin/gst-launch-1.0 -q \
+    udpsrc port=@RTP_PORT@ buffer-size=1048576 \
+        caps="application/x-rtp,media=audio,clock-rate=44100,encoding-name=L24,channels=2" \
+    ! rtpjitterbuffer latency=@RTP_LATENCY_MS@ drop-on-latency=true \
+    ! rtpL24depay \
+    ! audioconvert \
+    ! audioresample \
+    ! audio/x-raw,format=S32LE,rate=44100,channels=2 \
+    ! alsasink device=@ALSA_DEVICE@
+
+# Meme ordonnancement temps reel que shairport-sync : sans lui, un pic CPU du
+# Pi suffit a faire craquer le son.
+CPUSchedulingPolicy=fifo
+CPUSchedulingPriority=45
+LimitRTPRIO=99
+
+# "on-failure", pas "always" : avec Conflicts=, "always" ressusciterait le
+# recepteur juste apres que le dashboard l'a arrete pour une autre source.
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
